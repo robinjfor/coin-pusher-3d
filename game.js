@@ -6,7 +6,9 @@ import { startMinigame, minigameActive } from './minigames.js';
 
 const params = new URLSearchParams(location.search);
 const DEBUG = params.has('debug');
+const MOBILE = params.has('mobile') || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (window.matchMedia && matchMedia('(pointer: coarse)').matches);
 const LOWFX = params.has('lowfx');
+const LITE = LOWFX || MOBILE; // 手機自動使用省電設定
 const $ = (id) => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
 const randi = (a, b) => Math.floor(rand(a, b + 1));
@@ -22,20 +24,21 @@ const S = {
   pendingCoins: 0, dumpCoins: 0,
   totalWon: 0, broken: 0, hits: 0, shots: 0,
 };
-const MAX_COINS = 360, HARD_CAP = 440;
+const MAX_COINS = 420, HARD_CAP = 520;
 const FREE_DUR = 10, POWER_DUR = 50;
 const now = () => performance.now() / 1000;
 
 // ====================== 渲染器 / 場景 ======================
 const stage = $('stage'), hud = $('hud');
 let SW = 430, SH = 764, SPLIT = 382, HS = 1;
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(LOWFX ? 1 : Math.min(window.devicePixelRatio, 1.75));
+const renderer = new THREE.WebGLRenderer({ antialias: !MOBILE, powerPreference: MOBILE ? 'low-power' : 'high-performance' });
+renderer.setPixelRatio(LOWFX ? 1 : Math.min(window.devicePixelRatio, MOBILE ? 1.35 : 1.75));
 
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.12;
 renderer.shadowMap.enabled = !LOWFX;
+renderer.shadowMap.autoUpdate = false; // 陰影每幀最多算一次（兩個視角共用），手機每 3 幀更新一次
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 stage.prepend(renderer.domElement);
 
@@ -79,19 +82,21 @@ function resize() {
 window.addEventListener('resize', resize);
 
 // 燈光
-scene.add(new THREE.HemisphereLight(0xffffff, 0x0a0a0a, 0.45));
+scene.add(new THREE.HemisphereLight(0xffffff, 0x0a0a0a, LITE ? 0.75 : 0.45));
 const key = new THREE.DirectionalLight(0xfff6e8, 2.4);
 key.position.set(3, 12, 6); key.target.position.set(0, 0, 0);
-key.castShadow = true; key.shadow.mapSize.set(2048, 2048);
+key.castShadow = true; key.shadow.mapSize.set(MOBILE ? 1024 : 2048, MOBILE ? 1024 : 2048);
 Object.assign(key.shadow.camera, { left: -6.5, right: 6.5, top: 7, bottom: -7, near: 1, far: 30 });
 key.shadow.bias = -0.0008;
 scene.add(key, key.target);
 const upper = new THREE.DirectionalLight(0xffffff, 1.5); upper.position.set(-4, 14, 4); upper.target.position.set(0, 6, -10); scene.add(upper, upper.target);
 // 側面輪廓光：白光 + 一盞金色重點光（單一強調色）
-const pl1 = new THREE.PointLight(0xffffff, 22, 18); pl1.position.set(-6, 3.5, 1); scene.add(pl1);
-const pl2 = new THREE.PointLight(0xffffff, 22, 18); pl2.position.set(6, 3.5, 1); scene.add(pl2);
+if (!LITE) { // 手機省略兩盞側光（逐像素成本高）
+  const pl1 = new THREE.PointLight(0xffffff, 22, 18); pl1.position.set(-6, 3.5, 1); scene.add(pl1);
+  const pl2 = new THREE.PointLight(0xffffff, 22, 18); pl2.position.set(6, 3.5, 1); scene.add(pl2);
+}
 const pl3 = new THREE.PointLight(0xffc000, 30, 14); pl3.position.set(0, 4, 4); scene.add(pl3);
-const spotItems = new THREE.SpotLight(0xffffff, 120, 40, 0.75, 0.6); spotItems.position.set(0, 18, 2); spotItems.target.position.set(0, 7, -10); scene.add(spotItems, spotItems.target);
+if (!LITE) { const spotItems = new THREE.SpotLight(0xffffff, 120, 40, 0.75, 0.6); spotItems.position.set(0, 18, 2); spotItems.target.position.set(0, 7, -10); scene.add(spotItems, spotItems.target); }
 
 // ====================== 材質 ======================
 function canvasTex(w, h, draw) {
@@ -103,7 +108,7 @@ function canvasTex(w, h, draw) {
 function hexPath(g, cx, cy, r, rot = Math.PI / 6) { g.beginPath(); for (let i = 0; i < 6; i++) { const a = rot + i * Math.PI / 3; g[i ? 'lineTo' : 'moveTo'](cx + Math.cos(a) * r, cy + Math.sin(a) * r); } g.closePath(); }
 const coinFaceTex = canvasTex(256, 256, (g, w, h) => {
   const gr = g.createRadialGradient(100, 90, 10, 128, 128, 140);
-  gr.addColorStop(0, '#ffe7a0'); gr.addColorStop(0.55, '#f2b73a'); gr.addColorStop(1, '#b8820f');
+  gr.addColorStop(0, '#fff6cf'); gr.addColorStop(0.55, '#ffd25a'); gr.addColorStop(1, '#e0a92a');
   g.fillStyle = gr; g.fillRect(0, 0, w, h);
   g.strokeStyle = 'rgba(120,70,0,.55)'; g.lineWidth = 5; g.beginPath(); g.arc(128, 128, 104, 0, 7); g.stroke();
   hexPath(g, 128, 128, 62); g.strokeStyle = 'rgba(110,62,0,.6)'; g.lineWidth = 6; g.stroke();
@@ -125,15 +130,15 @@ const coinEdgeTex = (() => { // 齒邊
 })();
 const M = {
   gold: new THREE.MeshStandardMaterial({ color: 0xffc23a, metalness: 1, roughness: 0.26 }),
-  coinEdge: new THREE.MeshStandardMaterial({ color: 0xf0b230, metalness: 1, roughness: 0.32, bumpMap: coinEdgeTex, bumpScale: 1.2 }),
-  coinFace: new THREE.MeshStandardMaterial({ color: 0xffffff, map: coinFaceTex, bumpMap: coinBumpTex, bumpScale: 2.2, metalness: 1, roughness: 0.3 }),
+  coinEdge: new THREE.MeshStandardMaterial({ color: 0xffcc48, metalness: 1, roughness: 0.22, envMapIntensity: 1.8, bumpMap: coinEdgeTex, bumpScale: 1.2 }),
+  coinFace: new THREE.MeshStandardMaterial({ color: 0xffffff, map: coinFaceTex, bumpMap: coinBumpTex, bumpScale: 2.0, metalness: 1, roughness: 0.2, envMapIntensity: 1.9 }),
   chrome: new THREE.MeshStandardMaterial({ color: 0xd8dade, metalness: 1, roughness: 0.14 }),
   red: new THREE.MeshPhysicalMaterial({ color: 0xd0081e, metalness: 0.1, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.04 }),
   lacquer: new THREE.MeshPhysicalMaterial({ color: 0x050505, metalness: 0.2, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.06 }),
   charcoal: new THREE.MeshPhysicalMaterial({ color: 0x202020, metalness: 0.3, roughness: 0.45, clearcoat: 0.6, clearcoatRoughness: 0.2 }),
   pearl: new THREE.MeshPhysicalMaterial({ color: 0xf5f5f5, metalness: 0, roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.08, sheen: 0.4 }),
   leather: new THREE.MeshPhysicalMaterial({ color: 0x141414, roughness: 0.62, metalness: 0, sheen: 0.6, sheenColor: new THREE.Color(0x555555) }),
-  crystal: new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: 0.02, transmission: LOWFX ? 0 : 0.9, thickness: 0.4, ior: 2.2, clearcoat: 1 }),
+  crystal: new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.02, metalness: 0.3, ior: 2.2, clearcoat: 1, envMapIntensity: 2.5 }), // 不用 transmission（會多一次整個場景的渲染）
   steel: new THREE.MeshStandardMaterial({ color: 0xb8bcc4, metalness: 1, roughness: 0.32 }),
   white: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 }),
   rope: new THREE.MeshStandardMaterial({ color: 0xd8b04a, metalness: 0.85, roughness: 0.38 }),
@@ -214,12 +219,12 @@ const POOL = { xHalf: 4.2, front: 4.0, back: -7, wallZ: -2.0, pusherHalfD: 2.2, 
 }
 // ====================== 物理世界 ======================
 // 輕微向前傾斜的重力（模擬機台微傾），讓金幣堆更容易被推動
-const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -14, 0.3) });
+const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -14, 0.45) });
 world.broadphase = new CANNON.SAPBroadphase(world);
 world.allowSleep = true;
 world.solver.iterations = 5;
 const matCoin = new CANNON.Material('coin'), matStatic = new CANNON.Material('static'), matPusher = new CANNON.Material('pusher');
-world.addContactMaterial(new CANNON.ContactMaterial(matCoin, matCoin, { friction: 0.15, restitution: 0.05 }));
+world.addContactMaterial(new CANNON.ContactMaterial(matCoin, matCoin, { friction: 0.07, restitution: 0.05 }));
 world.addContactMaterial(new CANNON.ContactMaterial(matCoin, matStatic, { friction: 0.2, restitution: 0.08 }));
 world.addContactMaterial(new CANNON.ContactMaterial(matCoin, matPusher, { friction: 0.35, restitution: 0.02 }));
 function staticBox(hx, hy, hz, x, y, z) {
@@ -244,14 +249,16 @@ const RAMP = (() => {
   body.addShape(new CANNON.Box(new CANNON.Vec3(len / 2, 0.05, d.w)));
   body.addShape(new CANNON.Box(new CANNON.Vec3(len / 2, 0.3, 0.03)), new CANNON.Vec3(0, 0.3, d.w));
   body.addShape(new CANNON.Box(new CANNON.Vec3(len / 2, 0.3, 0.03)), new CANNON.Vec3(0, 0.3, -d.w));
+  body.addShape(new CANNON.Box(new CANNON.Vec3(len / 2, 0.3, 0.012)), new CANNON.Vec3(0, 0.3, 0)); // 中間分隔：兩條滾道
   body.position.set(mid.x, mid.y, mid.z); body.quaternion.setFromEuler(0, 0, ang); world.addBody(body);
   const g = new THREE.Group(); g.position.copy(mid); g.rotation.z = ang;
   const base = new THREE.Mesh(new THREE.BoxGeometry(len, 0.1, d.w * 2), M.gold); base.receiveShadow = true; g.add(base);
   for (const sz of [-1, 1]) { const lip = new THREE.Mesh(new THREE.BoxGeometry(len, 0.6, 0.06), new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: 0.05, transparent: true, opacity: 0.18 })); lip.position.set(0, 0.3, sz * d.w); g.add(lip); }
+  { const mid = new THREE.Mesh(new THREE.BoxGeometry(len, 0.6, 0.024), M.chrome); mid.position.set(0, 0.3, 0); g.add(mid); }
   scene.add(g);
   return { dir, normal, z: d.z, top: new THREE.Vector3(d.x0 + dir.x * 0.25, d.y0 + dir.y * 0.25, d.z) };
 })();
-const PUSH = { mid: -0.75, amp: 1.35, w: (Math.PI * 2) / 4.6 };
+const PUSH = { mid: -0.55, amp: 1.5, w: (Math.PI * 2) / 4.6 };
 const pusherFront = (t) => PUSH.mid + PUSH.amp * Math.sin(PUSH.w * t);
 const pusherVel = (t) => PUSH.amp * PUSH.w * Math.cos(PUSH.w * t);
 const pusherMesh = new THREE.Group();
@@ -269,13 +276,53 @@ const pusherMesh = new THREE.Group();
 }
 
 // 金幣（InstancedMesh）
-const COIN_R = 0.32, COIN_H = 0.09;
-const coinGeo = new THREE.CylinderGeometry(COIN_R, COIN_R, COIN_H, 28);
+const COIN_R = 0.256, COIN_H = 0.072; // 縮小約 20%
+const coinGeo = new THREE.CylinderGeometry(COIN_R, COIN_R, COIN_H, LITE ? 18 : 26);
 const coinMesh = new THREE.InstancedMesh(coinGeo, [M.coinEdge, M.coinFace, M.coinFace], HARD_CAP + 10);
 coinMesh.castShadow = true; coinMesh.receiveShadow = true; coinMesh.count = 0;
 coinMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); coinMesh.frustumCulled = false;
 coinMesh.layers.set(2); scene.add(coinMesh);
-const coinShape = new CANNON.Box(new CANNON.Vec3(0.28, COIN_H / 2, 0.28));
+// 金幣閃光：少量星芒點精靈（單一 Points、加法混合），隨機附著在金幣上閃爍
+const SPARK_N = LITE ? 40 : 80;
+const sparkGeo = new THREE.BufferGeometry();
+sparkGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SPARK_N * 3), 3));
+sparkGeo.setAttribute('aSize', new THREE.BufferAttribute(new Float32Array(SPARK_N), 1));
+sparkGeo.setAttribute('aRot', new THREE.BufferAttribute(new Float32Array(SPARK_N), 1));
+const sparkMat = new THREE.ShaderMaterial({
+  uniforms: { uScale: { value: 400 } }, transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending,
+  vertexShader: `attribute float aSize; attribute float aRot; varying float vA; varying float vR; uniform float uScale;
+    void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv; gl_PointSize = aSize * uScale / -mv.z; vA = clamp(aSize * 3.0, 0.0, 1.0); vR = aRot; }`,
+  fragmentShader: `varying float vA; varying float vR;
+    void main() { vec2 p = gl_PointCoord * 2.0 - 1.0; float c = cos(vR), s = sin(vR); p = mat2(c, -s, s, c) * p;
+      float d = length(p); float ray = max(0.0, 1.0 - abs(p.x) * 9.0) * pow(max(0.0, 1.0 - abs(p.y)), 2.0) + max(0.0, 1.0 - abs(p.y) * 9.0) * pow(max(0.0, 1.0 - abs(p.x)), 2.0);
+      float core = exp(-d * d * 18.0); float a = (ray * 1.4 + core * 1.3) * vA; if (a < 0.01) discard;
+      gl_FragColor = vec4(vec3(1.0, 0.93, 0.7) * a, a); }`,
+});
+const sparkPts = new THREE.Points(sparkGeo, sparkMat); sparkPts.frustumCulled = false; sparkPts.layers.set(2); scene.add(sparkPts);
+const sparks = Array.from({ length: SPARK_N }, () => ({ c: null, t: 0, dur: 0, ox: 0, oz: 0, big: 1, rot: 0, delay: Math.random() * 1.5 }));
+const _sq = new THREE.Quaternion(), _sv = new THREE.Vector3();
+function updateSparkles(dt) {
+  sparkMat.uniforms.uScale.value = (SH - SPLIT) * renderer.getPixelRatio() * 1.1;
+  const pos = sparkGeo.attributes.position.array, size = sparkGeo.attributes.aSize.array, rot = sparkGeo.attributes.aRot.array;
+  for (let i = 0; i < SPARK_N; i++) {
+    const k = sparks[i];
+    if (k.delay > 0) { k.delay -= dt; size[i] = 0; continue; }
+    k.t += dt;
+    if (!k.c || k.t >= k.dur || !k.c.body.world) {
+      k.c = null; size[i] = 0;
+      for (let tries = 0; tries < 4 && coins.length; tries++) { const c = coins[(Math.random() * coins.length) | 0]; if (c.free || c.body.position.y > 0.1) { k.c = c; break; } }
+      if (!k.c && coins.length) k.c = coins[(Math.random() * coins.length) | 0];
+      k.t = 0; k.dur = rand(0.35, 0.8); const a = rand(0, Math.PI * 2), r = rand(0, COIN_R * 0.7); k.ox = Math.cos(a) * r; k.oz = Math.sin(a) * r; k.big = rand(0.7, 1.3); k.rot = rand(0, 1.6); k.delay = rand(0, 0.25);
+      continue;
+    }
+    const b = k.c.body; _sq.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w);
+    _sv.set(k.ox, COIN_H * 0.55, k.oz).applyQuaternion(_sq);
+    pos[i * 3] = b.position.x + _sv.x; pos[i * 3 + 1] = b.position.y + _sv.y + 0.02; pos[i * 3 + 2] = b.position.z + _sv.z;
+    const u = k.t / k.dur; size[i] = Math.sin(Math.PI * u) ** 2 * 0.85 * k.big; rot[i] = k.rot + u * 0.8;
+  }
+  sparkGeo.attributes.position.needsUpdate = true; sparkGeo.attributes.aSize.needsUpdate = true; sparkGeo.attributes.aRot.needsUpdate = true;
+}
+const coinShape = new CANNON.Box(new CANNON.Vec3(0.225, COIN_H / 2, 0.225));
 const coins = []; // {body}
 const balls = []; // {body, mesh}
 const ballShape = new CANNON.Sphere(0.36);
@@ -286,7 +333,7 @@ const ballGeo = new THREE.SphereGeometry(0.36, 28, 20);
 //  flat：平躺方塊剛體（鎖定旋轉），落定後切換，讓大量金幣堆疊時效能穩定；到前緣時再解鎖翻落
 const coinCyl = new CANNON.Cylinder(COIN_R, COIN_R, COIN_H, 12);
 let freeCount = 0;
-const FREE_MAX = 80;
+const FREE_MAX = 130;
 function onCoinCollide(e) {
   const v = Math.abs(e.contact.getImpactVelocityAlongNormal());
   if (v < 0.8) return;
@@ -316,12 +363,12 @@ function addFreeCoin(x, y, z, q, v, w, hardCap = MAX_COINS) {
   coins.push({ body: makeFreeCoinBody(x, y, z, q, v, w), born: simTime, free: true });
   return true;
 }
-const _up = new CANNON.Vec3(), _ax = new CANNON.Vec3();
+const _up = new CANNON.Vec3(), _ax = new CANNON.Vec3(), _X1 = new CANNON.Vec3(1, 0, 0), _Y1 = new CANNON.Vec3(0, 1, 0);
 // 自由金幣落定（平躺且速度很低）後轉為平躺方塊
 function settleCoin(c) {
   const b = c.body;
   b.removeEventListener('collide', onCoinCollide);
-  b.quaternion.vmult(new CANNON.Vec3(1, 0, 0), _ax);
+  b.quaternion.vmult(_X1, _ax);
   const yaw = Math.atan2(-_ax.z, _ax.x);
   b.removeShape(b.shapes[0]); b.addShape(coinShape);
   b.quaternion.setFromEuler(0, yaw, 0);
@@ -346,7 +393,7 @@ function updateFreeCoins(t) {
         c.edge = false; b.angularFactor.set(1, 1, 1); b.angularVelocity.x += rand(-2.5, 2.5);
       } else continue;
     }
-    b.quaternion.vmult(new CANNON.Vec3(0, 1, 0), _up);
+    b.quaternion.vmult(_Y1, _up);
     const flat = Math.abs(_up.y) > 0.94;
     const sp = b.velocity.length() + b.angularVelocity.length() * 0.25;
     if ((age > 0.8 && flat && sp < 0.45 && b.position.y < 1.6) || (age > 2.5 && sp < 1.5 && b.position.y < 2 && Math.abs(_up.y) > 0.6) || age > 6) settleCoin(c);
@@ -360,15 +407,18 @@ function addBall(x, y, z, vx = 0, vy = 0, vz = 0) {
   balls.push({ body: b, mesh: m });
 }
 // 出幣口：金幣立著從斜坡滾下，滾出坡底後自然倒入金幣池
+let chuteLane = 0;
 function spawnChuteCoin() {
   const sp = rand(3.3, 3.7);
   const p = RAMP.top.clone().addScaledVector(RAMP.normal, COIN_R + 0.03);
   // 出幣口前方還有金幣就先等一下，避免新金幣和前一枚重疊而被彈出斜坡
-  for (const c of coins) { const q = c.body.position; if ((q.x - p.x) ** 2 + (q.y - p.y) ** 2 + (q.z - RAMP.z) ** 2 < 0.64 * 0.64) return false; }
+  const lane = chuteLane ^ 1, lz = RAMP.z + (lane ? 0.12 : -0.12); // 兩條滾道輪流出幣
+  for (const c of coins) { const q = c.body.position; if (Math.abs(q.z - lz) < 0.1 && (q.x - p.x) ** 2 + (q.y - p.y) ** 2 < 0.53 * 0.53) return false; }
+  chuteLane = lane;
   const q = new CANNON.Quaternion().setFromEuler(Math.PI / 2, 0, rand(-0.05, 0.05)); // 軸向朝 z → 立起來
   const v = new CANNON.Vec3(RAMP.dir.x * sp, RAMP.dir.y * sp, 0);
   const w = new CANNON.Vec3(rand(-0.3, 0.3), 0, -sp / COIN_R);
-  const ok = addFreeCoin(p.x, p.y, RAMP.z + rand(-0.03, 0.03), q, v, w, HARD_CAP);
+  const ok = addFreeCoin(p.x, p.y, lz + rand(-0.01, 0.01), q, v, w, HARD_CAP);
   if (ok) {
     // 立著滾：只允許繞 z 軸（硬幣自身的軸）旋轉，滾出坡底一段距離後才放開讓它自然倒下
     const c = coins[coins.length - 1]; c.edge = true; c.body.angularFactor.set(0, 0, 1);
@@ -377,45 +427,52 @@ function spawnChuteCoin() {
   return ok;
 }
 // 側邊倒入：左右兩側固定的倒幣口輪流把金幣倒進池中，帶隨機角度翻滾
-const SPOUTS = [-1, 1].map(sx => ({ sx, x: sx * (POOL.xHalf - 1.5), y: 2.2, z: 1.3 }));
-let spoutTurn = 0;
-// 倒幣口外觀：黑色烤漆倒幣槽從兩側伸進池子上方＋金色出口框＋上方漏斗
+const SPOUTS = [-1, 1].map(sx => ({ sx, x: sx * (POOL.xHalf - 1.75), y: 2.15, z: 1.55, timer: sx > 0 ? 0.18 : 0 }));
+const SPOUT_W = 2.1; // 出幣口寬度（z 方向）
+// 倒幣口外觀：寬口黑色烤漆倒幣槽從兩側伸進池子上方＋金色出口框＋上方漏斗
 for (const sp of SPOUTS) {
-  const g = new THREE.Group(); g.position.set(sp.sx * (POOL.xHalf - 0.75), sp.y + 0.15, sp.z);
-  const body = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.42, 1.0), M.lacquer); body.castShadow = true; g.add(body);
-  const top = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.03, 1.0), M.charcoal); top.position.y = 0.22; g.add(top);
-  const hop = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.28, 0.55, 6, 1, true), M.lacquer); hop.position.set(sp.sx * 0.25, 0.5, 0); g.add(hop);
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.03, 6, 6), M.goldGlow); ring.rotation.x = Math.PI / 2; ring.rotation.z = Math.PI / 6; ring.position.set(sp.sx * 0.25, 0.78, 0); g.add(ring);
-  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.26, 0.8), new THREE.MeshBasicMaterial({ color: 0x000000 })); mouth.position.set(-sp.sx * 0.66, -0.02, 0); g.add(mouth);
-  const frame = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.34, 0.9), M.goldGlow); frame.position.set(-sp.sx * 0.655, -0.02, 0); g.add(frame);
-  const lip = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 0.8), M.chrome); lip.position.set(-sp.sx * 0.78, -0.2, 0); lip.rotation.z = sp.sx * 0.35; g.add(lip);
-  const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.03, 0.02), M.goldGlow); stripe.position.set(0, -0.12, 0.51); g.add(stripe);
+  const g = new THREE.Group(); g.position.set(sp.sx * (POOL.xHalf - 0.95), sp.y + 0.2, sp.z);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.5, SPOUT_W + 0.3), M.lacquer); body.castShadow = true; g.add(body);
+  const top = new THREE.Mesh(new THREE.BoxGeometry(1.32, 0.03, SPOUT_W + 0.32), M.charcoal); top.position.y = 0.26; g.add(top);
+  const hop = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.5, SPOUT_W + 0.1), M.lacquer); hop.position.set(sp.sx * 0.15, 0.52, 0); hop.scale.x = 1; g.add(hop);
+  const hopRim = new THREE.Mesh(new THREE.BoxGeometry(1.06, 0.05, SPOUT_W + 0.16), M.goldGlow); hopRim.position.set(sp.sx * 0.15, 0.78, 0); g.add(hopRim);
+  const pile = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.02, SPOUT_W - 0.05), M.gold); pile.position.set(sp.sx * 0.15, 0.79, 0); g.add(pile); // 漏斗裡的金幣
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.32, SPOUT_W), new THREE.MeshBasicMaterial({ color: 0x000000 })); mouth.position.set(-sp.sx * 0.66, -0.03, 0); g.add(mouth);
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.42, SPOUT_W + 0.1), M.goldGlow); frame.position.set(-sp.sx * 0.655, -0.03, 0); g.add(frame);
+  const inner = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.3, SPOUT_W - 0.04), new THREE.MeshBasicMaterial({ color: 0x000000 })); inner.position.set(-sp.sx * 0.68, -0.03, 0); g.add(inner);
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.03, SPOUT_W), M.charcoal); lip.position.set(-sp.sx * 0.84, -0.24, 0); lip.rotation.z = sp.sx * 0.35; g.add(lip);
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.03, 0.02), M.goldGlow); stripe.position.set(0, -0.14, SPOUT_W / 2 + 0.16); g.add(stripe);
   scene.add(g); sp.frame = frame;
 }
-function spawnDropCoin() {
-  const sp = SPOUTS[spoutTurn]; spoutTurn ^= 1;
-  const q = new CANNON.Quaternion().setFromEuler(rand(-0.6, 0.6), rand(0, Math.PI * 2), Math.PI / 2 * sp.sx + rand(-0.5, 0.5));
-  const v = new CANNON.Vec3(-sp.sx * rand(1.6, 3.2), rand(-0.4, 0.6), rand(-0.9, 0.9));
-  const w = new CANNON.Vec3(rand(-8, 8), rand(-4, 4), rand(-10, 10));
-  const ok = addFreeCoin(sp.x, sp.y + rand(-0.05, 0.05), sp.z + rand(-0.35, 0.35), q, v, w, HARD_CAP);
-  if (ok) sp.flash = 1;
-  return ok;
+// 一口氣倒出：每一波在整個出口寬度上同時噴出一團金幣（4 列 × 3 排）
+function spawnPourBurst(sp, maxN) {
+  let n = 0;
+  for (let j = 0; j < 3 && n < maxN; j++) for (let i = 0; i < 4 && n < maxN; i++) {
+    const q = new CANNON.Quaternion().setFromEuler(rand(-0.8, 0.8), rand(0, Math.PI * 2), Math.PI / 2 * sp.sx + rand(-0.7, 0.7));
+    const v = new CANNON.Vec3(-sp.sx * rand(1.8, 3.6) - sp.sx * j * 0.4, rand(-0.6, 0.8), rand(-0.6, 0.6) + (i - 1.5) * 0.25);
+    const w = new CANNON.Vec3(rand(-9, 9), rand(-4, 4), rand(-11, 11));
+    const x = sp.x - sp.sx * j * 0.55 + rand(-0.03, 0.03), y = sp.y + (j % 2) * 0.12 + rand(-0.03, 0.03), z = sp.z + (i - 1.5) * 0.55 + rand(-0.04, 0.04);
+    if (!addFreeCoin(x, y, z, q, v, w, HARD_CAP)) return n;
+    n++;
+  }
+  return n;
 }
 
 // 初始金幣堆與紅球
 function initPool() {
   const p0 = pusherFront(0);
   for (let layer = 0; layer < 3; layer++) {
-    for (let x = -POOL.xHalf + 0.35; x <= POOL.xHalf - 0.34; x += 0.64) {
-      for (let z = p0 + 0.4; z <= POOL.front - 0.15; z += 0.64) {
+    for (let x = -POOL.xHalf + 0.3; x <= POOL.xHalf - 0.28; x += 0.52) {
+      for (let z = p0 + 0.35; z <= POOL.front - 0.12; z += 0.52) {
         if (layer === 2 && Math.random() < 0.6) continue;
-        const o = layer % 2 ? 0.28 : 0;
-        if (Math.abs(x + o) > POOL.xHalf - 0.3) continue;
-        addCoin(x + o + rand(-.04, .04), 0.05 + layer * 0.1, z + o + rand(-.04, .04));
+        if (coins.length >= 330) continue; // 初始金幣不要塞滿，留空間給倒入的金幣
+        const o = layer % 2 ? 0.23 : 0;
+        if (Math.abs(x + o) > POOL.xHalf - 0.25) continue;
+        addCoin(x + o + rand(-.03, .03), 0.04 + layer * 0.08, z + o + rand(-.03, .03));
       }
     }
   }
-  for (let x = -POOL.xHalf + 0.4; x <= POOL.xHalf - 0.4; x += 0.66) for (let z = POOL.wallZ + 0.35; z < p0 - 0.3; z += 0.66) addCoin(x, POOL.pusherH + 0.06, z);
+  for (let x = -POOL.xHalf + 0.4; x <= POOL.xHalf - 0.4; x += 0.54) for (let z = POOL.wallZ + 0.3; z < p0 - 0.25; z += 0.54) addCoin(x, POOL.pusherH + 0.05, z);
   for (let i = 0; i < 10; i++) addBall(rand(-POOL.xHalf + 0.8, POOL.xHalf - 0.8), 0.9 + i * 0.05, rand(-0.2, POOL.front - 2));
 }
 
@@ -524,6 +581,7 @@ function newItemData(row, rowIdx) {
   const vmul = 0.85 + 0.3 * (row.values.indexOf(value) / (row.values.length - 1));
   return { value, kind: pick(kinds), s: row.scale * vmul * 0.85 };
 }
+const ROPE_HOT = new THREE.Color(0xff5030);
 function buildItem(it) {
   if (it.pivot) itemsRoot.remove(it.pivot);
   const d = newItemData(it.row, it.rowIdx);
@@ -775,7 +833,7 @@ function onItemHit(it, power, pos) {
   else {
     it.kick = Math.min(0.5, it.kick + 0.25);
     popup(pick(['差一點！', '繩子撐住了', '沒斷！']), sp.x, sp.y, 'miss');
-    it.rope.material.color.lerp(new THREE.Color(0xff5030), 0.12);
+    it.rope.material.color.lerp(ROPE_HOT, 0.12);
   }
 }
 
@@ -791,18 +849,22 @@ function addPrizeCoins(n, src) {
   updateHUD();
 }
 let dispenseTimer = 0;
-let pourAcc = 0;
 function updateDispense(dt) {
   dispenseTimer -= dt;
   if (S.pendingCoins > 0 && dispenseTimer <= 0) {
     const ok = spawnChuteCoin(); if (ok) S.pendingCoins--;
-    dispenseTimer = ok ? Math.max(dispenseTimer + 0.2, 0.05) : 0.03;
+    dispenseTimer = ok ? Math.max(dispenseTimer + 0.1, 0.03) : 0.02;
   }
   // 池子滿了（物理上限）就先留在倒幣口排隊，等金幣被推出去騰出空間再倒
   if (S.dumpCoins > 0) {
-    pourAcc = Math.min(pourAcc + dt * 26, 3);
-    while (S.dumpCoins > 0 && pourAcc >= 1) { if (!spawnDropCoin()) { pourAcc = 0; break; } S.dumpCoins--; pourAcc -= 1; }
-  } else pourAcc = 0;
+    for (const sp of SPOUTS) {
+      sp.timer -= dt;
+      if (sp.timer <= 0 && S.dumpCoins > 0) {
+        const n = spawnPourBurst(sp, Math.min(12, S.dumpCoins)); S.dumpCoins -= n;
+        sp.timer = n ? 0.36 : 0.15; if (n >= 6) sfx.drop(1.2);
+      }
+    }
+  }
 }
 
 // ====================== 彩券 ======================
@@ -1072,7 +1134,9 @@ $('helpOk').addEventListener('click', () => { initAudio(); $('helpPanel').classL
 if (!DEBUG && !params.has('nohelp')) $('helpPanel').classList.remove('hidden');
 
 // ====================== 主迴圈 ======================
+let shadowTick = 0;
 function renderViews() {
+  if (renderer.shadowMap.enabled && (shadowTick++ % (MOBILE ? 3 : 1)) === 0) renderer.shadowMap.needsUpdate = true;
   renderer.setScissorTest(true);
   renderer.setViewport(0, SH - SPLIT, SW, SPLIT); renderer.setScissor(0, SH - SPLIT, SW, SPLIT);
   renderer.render(scene, camera);
@@ -1125,7 +1189,8 @@ function syncPool() {
   }
   for (let i = coins.length - 1; i >= 0; i--) {
     const b = coins[i].body, p = b.position;
-    if (b.fixedRotation && p.z > POOL.front - 0.05) { b.fixedRotation = false; b.updateMassProperties(); b.wakeUp(); b.angularVelocity.set(1.5, 0, 0); }
+    if (!b.fixedRotation && b.allowSleep && p.z > POOL.front - 0.05) { b.allowSleep = false; b.wakeUp(); }
+    if (b.fixedRotation && p.z > POOL.front - 0.05) { b.fixedRotation = false; b.allowSleep = false; b.updateMassProperties(); b.wakeUp(); b.angularVelocity.set(1.5, 0, 0); }
     if (p.y < -1.0 || Math.abs(p.x) > POOL.xHalf + 1 || p.z > POOL.front + 2.5) {
       if (p.z > POOL.front - 0.3) { const s = toScreen(new THREE.Vector3(p.x, 0, POOL.front), poolCam); addTickets(1, s.x, s.y); sfx.coin(); }
       if (coins[i].free) { freeCount--; b.removeEventListener('collide', onCoinCollide); }
@@ -1148,22 +1213,39 @@ function syncPool() {
     mesh.position.copy(b.position); mesh.quaternion.copy(b.quaternion);
   }
 }
+let lastBlink = -1, lastCharge = -1, lastChDisp = '', lastMx = -1, lastMy = -1; const chargeFill = $('chargeBar').querySelector('i'), chargeRingEl = $('chargeRing'), crossEl = $('crosshair');
+let frameMs = 0, renderMs = 0, frames = 0, lastFrame = 0, lastInput = performance.now(), hiddenPaused = false;
+['pointerdown', 'pointermove', 'keydown', 'touchstart'].forEach((e) => window.addEventListener(e, () => { lastInput = performance.now(); }, { passive: true }));
+document.addEventListener('visibilitychange', () => {
+  // 分頁隱藏時完全停止（不跑物理也不渲染），回來時不補算時間
+  if (document.hidden) { hiddenPaused = true; sfx.suspend && sfx.suspend(); }
+  else { hiddenPaused = false; last = lastFrame = performance.now(); acc = 0; sfx.resume && sfx.resume(); requestAnimationFrame(loop); }
+});
+function isBusy() { return freeCount > 0 || S.dumpCoins > 0 || S.pendingCoins > 0 || wheel.spinning || charging || falling.length > 0 || performance.now() - lastInput < 12000; }
 function loop() {
+  if (hiddenPaused) return;
   requestAnimationFrame(loop);
-  const t = performance.now(); const dt = Math.min(0.05, (t - last) / 1000); last = t;
+  const t0 = performance.now();
+  // 幀率上限：最高 60fps（高刷螢幕不多算），手機閒置時降到 30fps
+  const cap = MOBILE && !isBusy() ? 30 : 60;
+  if (t0 - lastFrame < 1000 / cap - 2) return;
+  lastFrame = t0;
+  const t = t0; frames++; const dt = Math.min(0.05, (t - last) / 1000); last = t;
   const ts = t / 1000;
-  stepPhysics(dt); updateFreeCoins(simTime); syncPool();
+  stepPhysics(dt); updateFreeCoins(simTime); syncPool(); updateSparkles(dt);
   updateItems(dt, ts); updateIcons(dt); updateProjectiles(dt);
   updateDispense(dt); updateTickets(dt); updateWheel(dt); updateEggs(); updateModals();
   if (charging) charge = Math.min(1, (now() - chargeStart) / CHARGE_TIME);
-  $('chargeBar').querySelector('i').style.width = charge * 100 + '%';
-  $('chargeRing').style.strokeDashoffset = 188.5 * (1 - charge);
-  const ch = $('crosshair'); ch.style.left = mousePx.x + 'px'; ch.style.top = mousePx.y + 'px';
-  ch.style.display = (modalOpen() || minigameActive() || !aimInside) ? 'none' : 'block';
-  for (const b of blinkers) b.material.color.setHex(((Math.floor(ts * 4) + b.userData.blink) % 2) ? 0xffc000 : 0x494949);
+  if (charge !== lastCharge) { chargeFill.style.width = charge * 100 + '%'; chargeRingEl.style.strokeDashoffset = 188.5 * (1 - charge); lastCharge = charge; }
+  const chDisp = (modalOpen() || minigameActive() || !aimInside) ? 'none' : 'block';
+  if (chDisp !== lastChDisp) { crossEl.style.display = chDisp; lastChDisp = chDisp; }
+  if (chDisp === 'block' && (mousePx.x !== lastMx || mousePx.y !== lastMy)) { crossEl.style.transform = `translate(${mousePx.x}px, ${mousePx.y}px) translate(-50%, -50%)`; lastMx = mousePx.x; lastMy = mousePx.y; }
+  const blinkPhase = Math.floor(ts * 4); if (blinkPhase !== lastBlink) { lastBlink = blinkPhase; for (const b of blinkers) b.material.color.setHex(((blinkPhase + b.userData.blink) % 2) ? 0xffc000 : 0x494949); }
   hudTimer -= dt; if (hudTimer <= 0) { updateHUD(); updateBuffs(); hudTimer = 0.1; }
   // 小遊戲進行中，背景 3D 降頻渲染以節省效能
+  const _r0 = performance.now();
   if (!minigameActive() || (frameNo++ % 15) === 0) renderViews();
+  const _t1 = performance.now(); renderMs = renderMs * 0.95 + (_t1 - _r0) * 0.05; frameMs = frameMs * 0.95 + (_t1 - t) * 0.05;
 }
 
 // ====================== 除錯掛鉤 ======================
@@ -1192,10 +1274,11 @@ if (DEBUG) {
   $('debugPanel').addEventListener('click', (e) => { const d = e.target.dataset.d; if (d) debugAction(d); });
 }
 window.__game = {
-  S, debugAction, coins, balls, items, wheel,
+  S, debugAction, coins, balls, items, wheel, sparkPts, sparks,
   ff(sec) { for (let i = 0; i < sec * 60; i++) { stepPhysics(FIXED); updateFreeCoins(simTime); syncPool(); updateDispense(FIXED); } },
   shootAt(nx, ny, c = 0.5) { mouse.set(nx, ny); fire(c); },
   itemScreen(i) { const it = items[i]; const v = new THREE.Vector3(); it.model.getWorldPosition(v); return { ...toScreen(v), row: it.rowIdx, value: it.value, state: it.state }; },
+  perf: () => ({ frameMs: +frameMs.toFixed(2), renderMs: +renderMs.toFixed(2), physMs: +physMs.toFixed(2), frames, coins: coins.length, free: freeCount, pr: renderer.getPixelRatio() }),
   stats: () => ({ fixes: pusherFixes, onTop: coins.filter(c => !c.free && c.body.position.y > POOL.pusherH - 0.02 && c.body.position.z < pusherFront(simTime) - 0.05).length, nearExit: coins.filter(c => !c.free && c.body.position.x < RAMP_DEF.x1 + 0.8 && c.body.position.z < POOL.wallZ + 1.2 && c.body.position.y > 0.4).length, inside: coins.filter(c => c.body.position.y < POOL.pusherH - 0.015 && c.body.position.z < pusherFront(simTime) - 0.05).length, sim: +simTime.toFixed(1), free: freeCount, dump: S.dumpCoins, pending: S.pendingCoins, physMs: +physMs.toFixed(2), coins: coins.length, balls: balls.length, tickets: S.tickets, bullets: S.bullets, spins: S.spins, eggs: S.eggs, collect: { ...S.collect }, modal: currentModal && currentModal.type, minigame: minigameActive() }),
 };
 

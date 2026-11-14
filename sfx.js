@@ -62,6 +62,8 @@ function metalClink(v, base) {
   const ng = ctx.createGain(); ng.gain.value = 0.5; n.connect(hp); hp.connect(ng); ng.connect(out); n.start(t);
 }
 export const sfx = {
+  suspend() { if (ctx && ctx.state === "running") ctx.suspend(); },
+  resume() { if (ctx && ctx.state === "suspended") ctx.resume(); },
   shoot() { tone(520, 0.12, 'square', 0.12, 400); noise(0.08, 0.08, 3000); },
   hit() { tone(220, 0.1, 'triangle', 0.25, -80); },
   snap() { noise(0.25, 0.3, 600); tone(880, 0.3, 'sawtooth', 0.12, -600); },
