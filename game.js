@@ -54,7 +54,7 @@ scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 200);
 camera.position.set(0, 8, 6); camera.lookAt(0, 7.4, -8);
 const poolCam = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
-poolCam.position.set(0, 8.6, 8.6); poolCam.lookAt(0, -0.2, 0.7);
+poolCam.position.set(0, 7.4, 6.9); poolCam.lookAt(0, -0.3, 1.0);
 poolCam.layers.enable(2);
 camera.layers.enable(1); // 圖層 1：吊掛道具、子彈、道具 Icon（只在上方畫面顯示）
 
@@ -73,7 +73,7 @@ function resize() {
   camera.fov = Math.max(52, 2 * THREE.MathUtils.radToDeg(Math.atan(Math.tan(THREE.MathUtils.degToRad(26)) * 1.0 / camera.aspect)));
   camera.updateProjectionMatrix();
   poolCam.aspect = w / (h - SPLIT);
-  poolCam.fov = Math.max(44, 2 * THREE.MathUtils.radToDeg(Math.atan(0.44 / poolCam.aspect)));
+  poolCam.fov = Math.max(42, 2 * THREE.MathUtils.radToDeg(Math.atan(0.42 / poolCam.aspect)));
   poolCam.updateProjectionMatrix();
 }
 window.addEventListener('resize', resize);
@@ -208,7 +208,7 @@ staticBox(POOL.xHalf + 0.2, 3, 0.2, 0, 3, POOL.back - 0.2);
 
 const pusherBody = new CANNON.Body({ mass: 0, type: CANNON.Body.KINEMATIC, material: matPusher });
 pusherBody.addShape(new CANNON.Box(new CANNON.Vec3(POOL.xHalf - 0.03, POOL.pusherH / 2, POOL.pusherHalfD)));
-world.addBody(pusherBody);
+pusherBody.allowSleep = false; world.addBody(pusherBody);
 const RAMP = (() => {
   const d = RAMP_DEF;
   const dx = d.x1 - d.x0, dy = d.y1 - d.y0, len = Math.hypot(dx, dy), ang = Math.atan2(dy, dx);
@@ -216,12 +216,12 @@ const RAMP = (() => {
   const mid = new THREE.Vector3((d.x0 + d.x1) / 2, (d.y0 + d.y1) / 2, d.z).addScaledVector(normal, -0.05);
   const body = new CANNON.Body({ mass: 0, material: matStatic });
   body.addShape(new CANNON.Box(new CANNON.Vec3(len / 2, 0.05, d.w)));
-  body.addShape(new CANNON.Box(new CANNON.Vec3(len / 2, 0.14, 0.03)), new CANNON.Vec3(0, 0.14, d.w));
-  body.addShape(new CANNON.Box(new CANNON.Vec3(len / 2, 0.14, 0.03)), new CANNON.Vec3(0, 0.14, -d.w));
+  body.addShape(new CANNON.Box(new CANNON.Vec3(len / 2, 0.3, 0.03)), new CANNON.Vec3(0, 0.3, d.w));
+  body.addShape(new CANNON.Box(new CANNON.Vec3(len / 2, 0.3, 0.03)), new CANNON.Vec3(0, 0.3, -d.w));
   body.position.set(mid.x, mid.y, mid.z); body.quaternion.setFromEuler(0, 0, ang); world.addBody(body);
   const g = new THREE.Group(); g.position.copy(mid); g.rotation.z = ang;
   const base = new THREE.Mesh(new THREE.BoxGeometry(len, 0.1, d.w * 2), M.gold); base.receiveShadow = true; g.add(base);
-  for (const sz of [-1, 1]) { const lip = new THREE.Mesh(new THREE.BoxGeometry(len, 0.28, 0.06), new THREE.MeshStandardMaterial({ color: 0xff4fa0, metalness: 0.5, roughness: 0.3, transparent: true, opacity: 0.55 })); lip.position.set(0, 0.14, sz * d.w); g.add(lip); }
+  for (const sz of [-1, 1]) { const lip = new THREE.Mesh(new THREE.BoxGeometry(len, 0.6, 0.06), new THREE.MeshStandardMaterial({ color: 0xff4fa0, metalness: 0.5, roughness: 0.3, transparent: true, opacity: 0.55 })); lip.position.set(0, 0.3, sz * d.w); g.add(lip); }
   scene.add(g);
   return { dir, normal, z: d.z, top: new THREE.Vector3(d.x0 + dir.x * 0.25, d.y0 + dir.y * 0.25, d.z) };
 })();
@@ -308,10 +308,22 @@ function updateFreeCoins(t) {
   for (const c of coins) {
     if (!c.free) continue;
     const b = c.body, age = t - c.born;
+    // 斜坡上絕不停留：速度太低就沿坡道推一下
+    if (b.position.x < RAMP_DEF.x1 + 0.05 && b.position.y > 0.95) {
+      if (b.velocity.x * RAMP.dir.x + b.velocity.y * RAMP.dir.y < 3.3) { b.velocity.x += RAMP.dir.x * 0.3; b.velocity.y += RAMP.dir.y * 0.3; }
+      if (!c.edge) continue;
+    }
+    if (c.edge) {
+      const roll = Math.abs(b.angularVelocity.z) * COIN_R;
+      const off = b.position.x > RAMP_DEF.x1 + 0.05 || b.position.y < 0.95;
+      if (b.position.x > RAMP_DEF.x1 + 1.8 || age > 2.0 || (off && (roll < 0.9 || b.velocity.length() < 0.9))) {
+        c.edge = false; b.angularFactor.set(1, 1, 1); b.angularVelocity.x += rand(-2.5, 2.5);
+      } else continue;
+    }
     b.quaternion.vmult(new CANNON.Vec3(0, 1, 0), _up);
     const flat = Math.abs(_up.y) > 0.94;
     const sp = b.velocity.length() + b.angularVelocity.length() * 0.25;
-    if ((age > 0.8 && flat && sp < 0.45 && b.position.y < 1.6) || (age > 2.5 && sp < 1.5 && b.position.y < 2) || age > 6) settleCoin(c);
+    if ((age > 0.8 && flat && sp < 0.45 && b.position.y < 1.6) || (age > 2.5 && sp < 1.5 && b.position.y < 2 && Math.abs(_up.y) > 0.6) || age > 6) settleCoin(c);
   }
 }
 function addBall(x, y, z, vx = 0, vy = 0, vz = 0) {
@@ -323,13 +335,19 @@ function addBall(x, y, z, vx = 0, vy = 0, vz = 0) {
 }
 // 出幣口：金幣立著從斜坡滾下，滾出坡底後自然倒入金幣池
 function spawnChuteCoin() {
-  const sp = rand(1.4, 2.2);
+  const sp = rand(3.3, 3.7);
   const p = RAMP.top.clone().addScaledVector(RAMP.normal, COIN_R + 0.03);
+  // 出幣口前方還有金幣就先等一下，避免新金幣和前一枚重疊而被彈出斜坡
+  for (const c of coins) { const q = c.body.position; if ((q.x - p.x) ** 2 + (q.y - p.y) ** 2 + (q.z - RAMP.z) ** 2 < 0.64 * 0.64) return false; }
   const q = new CANNON.Quaternion().setFromEuler(Math.PI / 2, 0, rand(-0.05, 0.05)); // 軸向朝 z → 立起來
   const v = new CANNON.Vec3(RAMP.dir.x * sp, RAMP.dir.y * sp, 0);
   const w = new CANNON.Vec3(rand(-0.3, 0.3), 0, -sp / COIN_R);
   const ok = addFreeCoin(p.x, p.y, RAMP.z + rand(-0.03, 0.03), q, v, w, HARD_CAP);
-  if (ok) sfx.coin();
+  if (ok) {
+    // 立著滾：只允許繞 z 軸（硬幣自身的軸）旋轉，滾出坡底一段距離後才放開讓它自然倒下
+    const c = coins[coins.length - 1]; c.edge = true; c.body.angularFactor.set(0, 0, 1);
+    sfx.coin();
+  }
   return ok;
 }
 // 天降金幣：隨機角度與旋轉，翻滾落下
@@ -717,8 +735,8 @@ let spillAcc = 0;
 function updateDispense(dt) {
   dispenseTimer -= dt;
   if (S.pendingCoins > 0 && dispenseTimer <= 0) {
-    if (spawnChuteCoin()) S.pendingCoins--;
-    dispenseTimer = 0.5;
+    const ok = spawnChuteCoin(); if (ok) S.pendingCoins--;
+    dispenseTimer = ok ? Math.max(dispenseTimer + 0.2, 0.05) : 0.03;
   }
   // 金幣池滿了（物理上限）：把最前緣的金幣「推」出邊緣掉進出口，騰出空間讓上方金幣持續落下
   if ((S.dumpCoins > 0 || S.pendingCoins > 0) && coins.length >= HARD_CAP - 12) {
@@ -780,9 +798,11 @@ function addEgg() {
   if (S.eggs >= 3) { S.eggs -= 3; eggQueue++; setTimeout(updateHUD, 600); }
 }
 function openEggs(done) {
-  const panel = $('eggPanel'), row = $('eggRow'); row.innerHTML = '';
+  // 直接在右上三個金蛋指示器上開獎（不彈出面板、不擋射擊）
+  const slots = [...document.querySelectorAll('#eggSlots .egg')];
+  const rowEl = $('eggSlots').parentElement; rowEl.classList.add('opening');
   const results = [];
-  for (let i = 0; i < 3; i++) {
+  slots.forEach((el, i) => {
     const r = Math.random();
     let res;
     if (r < 0.25) res = { type: 'coin', n: randi(1, 50) };
@@ -790,30 +810,24 @@ function openEggs(done) {
     else if (r < 0.75) res = { type: 'ball' };
     else res = { type: 'spin' };
     results.push(res);
-    const e = document.createElement('div'); e.className = 'bigEgg';
-    const txt = res.type === 'coin' ? `<span class="ri">🪙</span>${res.n} 金幣` : res.type === 'miss' ? `<span class="ri">💨</span>落空` : res.type === 'ball' ? `<span class="ri">🔴</span>紅球` : `<span class="ri">🎡</span>轉盤機會`;
-    e.innerHTML = `<div class="shell"><div class="bottom"></div><div class="top"></div></div><div class="res ${res.type}">${txt}</div>`;
-    row.appendChild(e);
-  }
-  panel.classList.remove('hidden'); $('eggOk').classList.add('hidden');
-  const eggs = row.querySelectorAll('.bigEgg');
-  eggs.forEach((e, i) => {
-    setTimeout(() => e.classList.add('shake'), 200 + i * 650);
-    setTimeout(() => { e.classList.remove('shake'); e.classList.add('open'); results[i].type === 'miss' ? sfx.lose() : sfx.win(); }, 700 + i * 650);
+    const txt = res.type === 'coin' ? `🪙${res.n}` : res.type === 'miss' ? '💨落空' : res.type === 'ball' ? '🔴紅球' : '🎡轉盤';
+    el.querySelector('.eggRes')?.remove();
+    const tag = document.createElement('div'); tag.className = `eggRes ${res.type}`; tag.textContent = txt;
+    tag.style.top = (i % 2 ? 26 : -20) + 'px';
+    el.appendChild(tag); el.classList.add('opening');
+    setTimeout(() => el.classList.add('shake'), 150 + i * 450);
+    setTimeout(() => {
+      el.classList.remove('shake'); el.classList.add('cracked'); res.type === 'miss' ? sfx.lose() : sfx.win();
+      if (res.type === 'coin') addPrizeCoins(res.n, 'egg');
+      else if (res.type === 'ball') addBall(rand(-POOL.xHalf + 1, POOL.xHalf - 1), 5, rand(-1, POOL.front - 2));
+      else if (res.type === 'spin') S.spins++;
+      updateHUD();
+    }, 550 + i * 450);
   });
-  let closed = false;
-  const close = () => {
-    if (closed) return; closed = true;
-    panel.classList.add('hidden');
-    for (const r of results) {
-      if (r.type === 'coin') addPrizeCoins(r.n, 'egg');
-      else if (r.type === 'ball') addBall(rand(-POOL.xHalf + 1, POOL.xHalf - 1), 5, rand(-1, POOL.front - 2));
-      else if (r.type === 'spin') S.spins++;
-    }
-    updateHUD(); done();
-  };
-  setTimeout(() => { $('eggOk').classList.remove('hidden'); $('eggOk').onclick = close; }, 700 + 3 * 650);
-  setTimeout(close, 5000);
+  setTimeout(() => {
+    for (const el of slots) { el.classList.remove('opening', 'shake', 'cracked'); el.querySelector('.eggRes')?.remove(); }
+    rowEl.classList.remove('opening'); updateHUD(); done();
+  }, 550 + 2 * 450 + 2200);
 }
 let eggQueue = 0, eggOpen = false;
 function updateEggs() {
@@ -1014,19 +1028,56 @@ function renderViews() {
 const FIXED = 1 / 60;
 let frameNo = 0, physMs = 0, acc = 0, simTime = 0, last = performance.now(), hudTimer = 0;
 const dummy = new THREE.Object3D();
+// 推板防穿透：睡眠中的金幣在 cannon 求解器裡等同靜止物體，推板在折返（速度很低）時不會叫醒它們，
+// 於是慢慢壓進金幣裡，之後金幣就卡在推板體積內「穿透」。每一步：叫醒推板前緣附近的金幣，
+// 並把任何已經陷進推板體積的金幣移到推板前方（靠近前緣）或推板頂面（陷得很深）。
+let pusherFixes = 0;
+function guardPusher(pf) {
+  const top = POOL.pusherH, back = pf - POOL.pusherHalfD * 2, v = pusherVel(simTime);
+  for (const c of coins) {
+    const b = c.body, p = b.position;
+    if (c.spill || p.y > top + 0.2) continue;
+    if (p.z > pf - 0.7 && p.z < pf + 0.55 && b.sleepState !== 0) b.wakeUp();
+    if (p.y < top - 0.015 && p.z < pf + 0.02 && p.z > back - 0.3 && Math.abs(p.x) < POOL.xHalf + 0.05) {
+      if (pf - p.z < 0.6) { p.z = pf + 0.3; if (b.velocity.z < v) b.velocity.z = Math.max(v, 0); }
+      else { p.y = top + 0.07; b.velocity.y = 0; }
+      b.wakeUp(); pusherFixes++;
+    }
+  }
+}
 function stepPhysics(dt) {
   acc += Math.min(dt, 0.1); let n = 0;
   while (acc >= FIXED && n < 2) {
     const pz = pusherFront(simTime) - POOL.pusherHalfD;
     pusherBody.position.set(0, POOL.pusherH / 2, pz);
     pusherBody.velocity.set(0, 0, pusherVel(simTime));
+    guardPusher(pz + POOL.pusherHalfD);
     const _t0 = performance.now(); world.step(FIXED); physMs = physMs * 0.95 + (performance.now() - _t0) * 0.05;
     simTime += FIXED; acc -= FIXED; n++;
   }
   if (n === 2) acc = 0;
 }
 function syncPool() {
-  pusherMesh.position.set(0, POOL.pusherH / 2, pusherFront(simTime) - POOL.pusherHalfD);
+  const pf = pusherFront(simTime), pv = pusherVel(simTime);
+  pusherMesh.position.set(0, POOL.pusherH / 2, pf - POOL.pusherHalfD);
+  // 推板頂面的金幣緩慢往前送，不會在出幣口下方（推板頂、後牆前）堆積堵住出幣口
+  for (const c of coins) {
+    if (c.edge || c.spill) continue;
+    const b = c.body, p = b.position;
+    if (p.y < POOL.pusherH - 0.02 || p.z > pf - 0.05) continue;
+    const nearExit = p.x < RAMP_DEF.x1 + 1.4 && p.z < POOL.wallZ + 1.4;
+    const target = Math.max(pv, 0) + (nearExit ? 1.3 : 0.7);
+    if (b.velocity.z < target) { b.wakeUp(); b.velocity.z = Math.min(target, b.velocity.z + 0.25); }
+    if (nearExit && b.velocity.x < 0.6) { b.wakeUp(); b.velocity.x += 0.15; }
+  }
+  // 出幣口落點保持淨空：坡底附近疊高的金幣往池中央推開
+  for (const c of coins) {
+    if (c.edge || c.spill) continue;
+    const b = c.body, p = b.position;
+    if (p.y > 0.68 && p.x < RAMP_DEF.x1 + 1.0 && Math.abs(p.z - RAMP_DEF.z) < 1.0) {
+      b.wakeUp(); if (b.velocity.x < 1.4) b.velocity.x += 0.35; if (b.velocity.z < 1.0) b.velocity.z += 0.2;
+    }
+  }
   for (let i = coins.length - 1; i >= 0; i--) {
     const b = coins[i].body, p = b.position;
     if (coins[i].spill && b.type === CANNON.Body.KINEMATIC && p.z > POOL.front + 0.15) { b.type = CANNON.Body.DYNAMIC; b.updateMassProperties(); b.wakeUp(); b.angularVelocity.set(5, 0, 0); }
@@ -1101,7 +1152,7 @@ window.__game = {
   ff(sec) { for (let i = 0; i < sec * 60; i++) { stepPhysics(FIXED); updateFreeCoins(simTime); syncPool(); updateDispense(FIXED); } },
   shootAt(nx, ny, c = 0.5) { mouse.set(nx, ny); fire(c); },
   itemScreen(i) { const it = items[i]; const v = new THREE.Vector3(); it.model.getWorldPosition(v); return { ...toScreen(v), row: it.rowIdx, value: it.value, state: it.state }; },
-  stats: () => ({ sim: +simTime.toFixed(1), free: freeCount, dump: S.dumpCoins, pending: S.pendingCoins, physMs: +physMs.toFixed(2), coins: coins.length, balls: balls.length, tickets: S.tickets, bullets: S.bullets, spins: S.spins, eggs: S.eggs, collect: { ...S.collect }, modal: currentModal && currentModal.type, minigame: minigameActive() }),
+  stats: () => ({ fixes: pusherFixes, onTop: coins.filter(c => !c.free && c.body.position.y > POOL.pusherH - 0.02 && c.body.position.z < pusherFront(simTime) - 0.05).length, nearExit: coins.filter(c => !c.free && c.body.position.x < RAMP_DEF.x1 + 0.8 && c.body.position.z < POOL.wallZ + 1.2 && c.body.position.y > 0.4).length, inside: coins.filter(c => c.body.position.y < POOL.pusherH - 0.015 && c.body.position.z < pusherFront(simTime) - 0.05).length, sim: +simTime.toFixed(1), free: freeCount, dump: S.dumpCoins, pending: S.pendingCoins, physMs: +physMs.toFixed(2), coins: coins.length, balls: balls.length, tickets: S.tickets, bullets: S.bullets, spins: S.spins, eggs: S.eggs, collect: { ...S.collect }, modal: currentModal && currentModal.type, minigame: minigameActive() }),
 };
 
 // ====================== 啟動 ======================

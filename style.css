@@ -130,17 +130,14 @@ body::before { content: ""; position: fixed; inset: 0; background: repeating-lin
 .spinner { width: 48px; height: 48px; border-radius: 50%; border: 6px solid rgba(255,220,100,.2); border-top-color: #ffcc00; animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* 金蛋開獎：右上角小視窗，不擋遊戲 */
-.eggMini { right: 6px; top: 108px; width: 196px; padding: 5px 6px 7px; text-align: center; pointer-events: auto; z-index: 6; border-color: #ffcf4a; box-shadow: 0 0 18px rgba(255,190,40,.6); animation: eggIn .3s ease-out; }
-@keyframes eggIn { from { transform: translateY(-10px) scale(.9); opacity: 0; } }
-.eggTitle { font-size: 13px; font-weight: 900; color: #ffe066; text-shadow: 0 0 8px #ff9d00; }
-.eggMini #eggRow { gap: 4px; margin: 3px 0 4px; }
-.eggMini .bigEgg { width: 60px; }
-.eggMini .bigEgg .shell { width: 38px; height: 48px; }
-.eggMini .bigEgg .top, .eggMini .bigEgg .bottom { width: 38px; }
-.eggMini .bigEgg .top { height: 24px; border-radius: 19px 19px 0 0 / 24px 24px 0 0; }
-.eggMini .bigEgg .bottom { top: 20px; height: 28px; border-radius: 0 0 19px 19px / 0 0 22px 22px; }
-.eggMini .bigEgg.open .top { transform: translate(-8px, -16px) rotate(-35deg); }
-.eggMini .bigEgg .res { height: 34px; margin-top: 2px; font-size: 11px; line-height: 1.15; }
-.eggMini .bigEgg .res .ri { font-size: 15px; }
-.eggMini .btn { font-size: 12px; padding: 3px 14px; }
+/* 金蛋開獎：直接在右上三個金蛋指示器上開，不擋射擊 */
+#eggSlots, #eggSlots * { pointer-events: none; }
+.egg { position: relative; }
+.egg.opening { border: 1.5px solid #fff2b0; background: radial-gradient(circle at 35% 30%, #fffbe0, #ffd23a 35%, #d98a00 80%); box-shadow: 0 0 12px #ffc400; }
+.egg.shake { animation: shake .1s infinite; }
+.egg.cracked { background: radial-gradient(circle at 50% 75%, #fff6c8, #ffcf3a 45%, #c07800 85%); box-shadow: 0 0 16px #fff1a0; border-top-color: transparent; }
+.egg.cracked::before { content: ''; position: absolute; left: -3px; width: 22px; top: -9px; height: 13px; border-radius: 11px 11px 0 0; background: radial-gradient(circle at 35% 40%, #fffbe0, #ffd23a 50%, #d98a00); clip-path: polygon(0 0,100% 0,100% 70%,85% 100%,68% 70%,50% 100%,32% 70%,15% 100%,0 70%); transform: rotate(-28deg); }
+.eggRes { position: absolute; left: 50%; top: -20px; transform: translateX(-50%) scale(.3); opacity: 0; white-space: nowrap; font-size: 10px; font-weight: 900; line-height: 1; padding: 2px 4px; border-radius: 8px; background: rgba(20,4,40,.85); border: 1px solid #ffcf4a; transition: transform .35s cubic-bezier(.3,1.7,.6,1), opacity .3s; z-index: 7; }
+.egg.cracked .eggRes { opacity: 1; transform: translateX(-50%) scale(1); }
+.eggRes.coin { color: #ffe066; } .eggRes.miss { color: #bbb; } .eggRes.ball { color: #ff6a7a; } .eggRes.spin { color: #6ff; }
+.eggRow.opening .label { color: #fff36b; text-shadow: 0 0 8px #ff9d00; }
