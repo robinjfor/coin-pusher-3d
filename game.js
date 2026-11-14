@@ -422,7 +422,7 @@ function spawnChuteCoin() {
   if (ok) {
     // 立著滾：只允許繞 z 軸（硬幣自身的軸）旋轉，滾出坡底一段距離後才放開讓它自然倒下
     const c = coins[coins.length - 1]; c.edge = true; c.body.angularFactor.set(0, 0, 1);
-    sfx.coin();
+    sfx.roll();
   }
   return ok;
 }
@@ -635,7 +635,7 @@ function updateItems(dt, t) {
     f.v.y -= 16 * dt; f.obj.position.addScaledVector(f.v, dt);
     f.obj.rotation.x += f.spin.x * dt; f.obj.rotation.z += f.spin.z * dt;
     f.life -= dt;
-    if (f.obj.position.y < 2.5 || f.life <= 0) { scene.remove(f.obj); falling.splice(i, 1); }
+    if (f.obj.position.y < 2.5 || f.life <= 0) { if (f.obj.position.y < 2.5) sfx.thud(); scene.remove(f.obj); falling.splice(i, 1); }
   }
 }
 
@@ -861,7 +861,7 @@ function updateDispense(dt) {
       sp.timer -= dt;
       if (sp.timer <= 0 && S.dumpCoins > 0) {
         const n = spawnPourBurst(sp, Math.min(12, S.dumpCoins)); S.dumpCoins -= n;
-        sp.timer = n ? 0.36 : 0.15; if (n >= 6) sfx.drop(1.2);
+        sp.timer = n ? 0.36 : 0.15; if (n >= 4) sfx.pour(sp.sx, n);
       }
     }
   }
@@ -925,7 +925,7 @@ function openEggs(done) {
     el.appendChild(tag); el.classList.add('opening');
     setTimeout(() => el.classList.add('shake'), 150 + i * 450);
     setTimeout(() => {
-      el.classList.remove('shake'); el.classList.add('cracked'); res.type === 'miss' ? sfx.lose() : sfx.win();
+      el.classList.remove('shake'); el.classList.add('cracked'); sfx.crack(); setTimeout(() => (res.type === 'miss' ? sfx.lose() : sfx.win()), 180);
       if (res.type === 'coin') addPrizeCoins(res.n, 'egg');
       else if (res.type === 'ball') addBall(rand(-POOL.xHalf + 1, POOL.xHalf - 1), 5, rand(-1, POOL.front - 2));
       else if (res.type === 'spin') S.spins++;
@@ -1192,7 +1192,7 @@ function syncPool() {
     if (!b.fixedRotation && b.allowSleep && p.z > POOL.front - 0.05) { b.allowSleep = false; b.wakeUp(); }
     if (b.fixedRotation && p.z > POOL.front - 0.05) { b.fixedRotation = false; b.allowSleep = false; b.updateMassProperties(); b.wakeUp(); b.angularVelocity.set(1.5, 0, 0); }
     if (p.y < -1.0 || Math.abs(p.x) > POOL.xHalf + 1 || p.z > POOL.front + 2.5) {
-      if (p.z > POOL.front - 0.3) { const s = toScreen(new THREE.Vector3(p.x, 0, POOL.front), poolCam); addTickets(1, s.x, s.y); sfx.coin(); }
+      if (p.z > POOL.front - 0.3) { const s = toScreen(new THREE.Vector3(p.x, 0, POOL.front), poolCam); addTickets(1, s.x, s.y); sfx.hole(); }
       if (coins[i].free) { freeCount--; b.removeEventListener('collide', onCoinCollide); }
       world.removeBody(b); coins[i] = coins[coins.length - 1]; coins.pop();
     }

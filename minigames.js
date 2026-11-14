@@ -127,7 +127,7 @@ function Plinko(finish) {
   const total = () => [1, 2, 3, 4].reduce((s, i) => s + value(i), 0);
 
   function land(i) {
-    const ho = holes[i]; ho.flash = 1; landed++;
+    const ho = holes[i]; ho.flash = 1; landed++; sfx.hole();
     const x = L + HW * (i + .5);
     if (!ho.prize) { msg = '空洞！損失一顆球'; sfx.lose(); floatText('空洞', x, HOLE_Y - 30, '#aaa'); }
     else {
@@ -256,7 +256,7 @@ function Darts(finish) {
     sfx.whoosh();
   }
   function impact(x, y) {
-    const dx = x - CX, dy = y - CY, d = Math.hypot(dx, dy);
+    sfx.hit(); const dx = x - CX, dy = y - CY, d = Math.hypot(dx, dy);
     let v = 0, label;
     if (d > R) { label = '脫靶！'; sfx.lose(); }
     else {
