@@ -3,7 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-<meta name="theme-color" content="#07020f" />
+<meta name="theme-color" content="#000000" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <title>3D 推金幣射擊機</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🪙</text></svg>" />
@@ -22,7 +25,7 @@
 <div id="stage">
   <div id="hud">
     <div id="leftPanel" class="panel">
-      <div class="row"><span class="label">子彈</span><span id="bullets" class="bigNum">20</span></div>
+      <div class="row"><span class="label">子彈 AMMO</span><span id="bullets" class="bigNum">20</span></div>
       <button id="insertBtn" class="btn gold">投幣 +10</button>
       <div class="small">已投幣 <span id="inserted">0</span> 次</div>
       <div id="buffs">
@@ -38,26 +41,26 @@
     </div>
 
     <div id="rightPanel" class="panel">
-      <div class="collect" id="colDiamond"><span class="ico">💎</span><span class="pips"><i></i><i></i><i></i></span><span class="cnt">0/3</span></div>
-      <div class="collect" id="colDart"><span class="ico">🎯</span><span class="pips"><i></i><i></i><i></i></span><span class="cnt">0/3</span></div>
-      <div class="collect" id="colHat"><span class="ico">🎩</span><span class="pips"><i></i><i></i><i></i></span><span class="cnt">0/3</span></div>
+      <div class="collect" id="colDiamond"><span class="ico"><svg viewBox="0 0 20 20"><path d="M3 7l3-4h8l3 4-7 10z"/></svg></span><span class="pips"><i></i><i></i><i></i></span><span class="cnt">0/3</span></div>
+      <div class="collect" id="colDart"><span class="ico"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke-width="2"/><circle cx="10" cy="10" r="4.5" fill="none" stroke-width="2"/><circle cx="10" cy="10" r="1.8"/></svg></span><span class="pips"><i></i><i></i><i></i></span><span class="cnt">0/3</span></div>
+      <div class="collect" id="colHat"><span class="ico"><svg viewBox="0 0 20 20"><rect x="6" y="3" width="8" height="10"/><rect x="2" y="13" width="16" height="2.5"/></svg></span><span class="pips"><i></i><i></i><i></i></span><span class="cnt">0/3</span></div>
       <div class="eggRow"><span class="label">金蛋</span><div id="eggSlots"><div class="egg"></div><div class="egg"></div><div class="egg"></div></div></div>
     </div>
 
 
     <div id="divider">
-      <div class="marquee">★ 幸運推金幣 ★</div>
-      <div class="dinfo">出幣中 <b id="dispQueue">0</b>　上方落下 <b id="dumpQueue">0</b>　池中 <b id="poolCount">0</b></div>
+      <div class="marquee">幸運推金幣 <span>LUCKY PUSHER</span></div>
+      <div class="dinfo">出幣中 <b id="dispQueue">0</b>　側邊倒入 <b id="dumpQueue">0</b>　池中 <b id="poolCount">0</b></div>
     </div>
 
     <div id="bottomLeft" class="panel">
-      <div class="label">蓄力</div>
+      <div class="label">蓄力 POWER</div>
       <div id="chargeBar"><i></i><span class="mk m1">近</span><span class="mk m2">中</span><span class="mk m3">遠</span></div>
     </div>
 
     <div id="ticketMachine">
       <div class="tmHead">
-        <div class="tmTitle">彩券機</div>
+        <div class="tmTitle">彩券 TICKETS</div>
         <div id="ticketLed">00000</div>
       </div>
       <div class="tmSlot"></div>
@@ -66,8 +69,8 @@
     </div>
 
     <div id="bottomRight" class="panel">
-      <button id="muteBtn" class="btn">🔊 音效</button>
-      <button id="helpBtn" class="btn">❓ 說明</button>
+      <button id="muteBtn" class="btn ghost">音效 ON</button>
+      <button id="helpBtn" class="btn ghost">說明</button>
     </div>
   </div>
 
@@ -93,7 +96,7 @@
         <li>在上方畫面瞄準（滑鼠移動或手指點按），<b>按住蓄力</b>、放開射擊；蓄力越久射得越遠，遠處道具金幣更多。</li>
         <li>金幣越多的道具繩子越難斷，偶爾會「爆擊」大幅提升斷繩機率。</li>
         <li>斷繩：獲得道具金幣（滾入金幣池）＋ 1 顆金蛋；集滿 3 顆開蛋。</li>
-        <li>轉盤集滿 3 個 💎／🎯／🎩 分別進入 連連看／飛鏢／魔術帽 小遊戲。</li>
+        <li>轉盤集滿 3 個 鑽石／飛鏢／魔術帽 分別進入 連連看／飛鏢／魔術帽 小遊戲。</li>
         <li>射中飛過的「免費子彈」10 秒不耗子彈；「威力子彈」50 秒斷繩機率提升。</li>
         <li>金幣被推進前方洞口：每枚 1 張彩券，紅球 20 張。按住／滑過彩券機可查看彩券數。</li>
       </ul>

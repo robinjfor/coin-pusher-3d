@@ -22,7 +22,7 @@ const S = {
   pendingCoins: 0, dumpCoins: 0,
   totalWon: 0, broken: 0, hits: 0, shots: 0,
 };
-const MAX_COINS = 340, HARD_CAP = 400;
+const MAX_COINS = 360, HARD_CAP = 440;
 const FREE_DUR = 10, POWER_DUR = 50;
 const now = () => performance.now() / 1000;
 
@@ -34,7 +34,7 @@ renderer.setPixelRatio(LOWFX ? 1 : Math.min(window.devicePixelRatio, 1.75));
 
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 1.12;
 renderer.shadowMap.enabled = !LOWFX;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 stage.prepend(renderer.domElement);
@@ -43,7 +43,7 @@ const scene = new THREE.Scene();
 {
   const c = document.createElement('canvas'); c.width = 16; c.height = 512;
   const g = c.getContext('2d'); const gr = g.createLinearGradient(0, 0, 0, 512);
-  gr.addColorStop(0, '#12002e'); gr.addColorStop(0.45, '#2a0650'); gr.addColorStop(1, '#05010d');
+  gr.addColorStop(0, '#000000'); gr.addColorStop(0.5, '#141414'); gr.addColorStop(1, '#000000');
   g.fillStyle = gr; g.fillRect(0, 0, 16, 512);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; scene.background = t;
 }
@@ -79,17 +79,19 @@ function resize() {
 window.addEventListener('resize', resize);
 
 // 燈光
-scene.add(new THREE.HemisphereLight(0xb9a0ff, 0x201030, 0.55));
-const key = new THREE.DirectionalLight(0xfff1d6, 2.2);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x0a0a0a, 0.45));
+const key = new THREE.DirectionalLight(0xfff6e8, 2.4);
 key.position.set(3, 12, 6); key.target.position.set(0, 0, 0);
 key.castShadow = true; key.shadow.mapSize.set(2048, 2048);
 Object.assign(key.shadow.camera, { left: -6.5, right: 6.5, top: 7, bottom: -7, near: 1, far: 30 });
 key.shadow.bias = -0.0008;
 scene.add(key, key.target);
-const upper = new THREE.DirectionalLight(0xffe0ff, 1.3); upper.position.set(-4, 14, 4); upper.target.position.set(0, 6, -10); scene.add(upper, upper.target);
-const pl1 = new THREE.PointLight(0xff2fa0, 30, 18); pl1.position.set(-6, 3.5, 1); scene.add(pl1);
-const pl2 = new THREE.PointLight(0x20d0ff, 30, 18); pl2.position.set(6, 3.5, 1); scene.add(pl2);
-const pl3 = new THREE.PointLight(0xffb030, 25, 14); pl3.position.set(0, 4, 4); scene.add(pl3);
+const upper = new THREE.DirectionalLight(0xffffff, 1.5); upper.position.set(-4, 14, 4); upper.target.position.set(0, 6, -10); scene.add(upper, upper.target);
+// 側面輪廓光：白光 + 一盞金色重點光（單一強調色）
+const pl1 = new THREE.PointLight(0xffffff, 22, 18); pl1.position.set(-6, 3.5, 1); scene.add(pl1);
+const pl2 = new THREE.PointLight(0xffffff, 22, 18); pl2.position.set(6, 3.5, 1); scene.add(pl2);
+const pl3 = new THREE.PointLight(0xffc000, 30, 14); pl3.position.set(0, 4, 4); scene.add(pl3);
+const spotItems = new THREE.SpotLight(0xffffff, 120, 40, 0.75, 0.6); spotItems.position.set(0, 18, 2); spotItems.target.position.set(0, 7, -10); scene.add(spotItems, spotItems.target);
 
 // ====================== 材質 ======================
 function canvasTex(w, h, draw) {
@@ -97,104 +99,128 @@ function canvasTex(w, h, draw) {
   draw(c.getContext('2d'), w, h);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
 }
-const coinFaceTex = canvasTex(128, 128, (g, w, h) => {
-  const gr = g.createRadialGradient(50, 45, 5, 64, 64, 64);
-  gr.addColorStop(0, '#fff4b8'); gr.addColorStop(0.6, '#ffc93a'); gr.addColorStop(1, '#c98200');
+// 金幣：金色 PBR + 浮雕（bumpMap）：凸起外圈、六角形徽記、齒邊
+function hexPath(g, cx, cy, r, rot = Math.PI / 6) { g.beginPath(); for (let i = 0; i < 6; i++) { const a = rot + i * Math.PI / 3; g[i ? 'lineTo' : 'moveTo'](cx + Math.cos(a) * r, cy + Math.sin(a) * r); } g.closePath(); }
+const coinFaceTex = canvasTex(256, 256, (g, w, h) => {
+  const gr = g.createRadialGradient(100, 90, 10, 128, 128, 140);
+  gr.addColorStop(0, '#ffe7a0'); gr.addColorStop(0.55, '#f2b73a'); gr.addColorStop(1, '#b8820f');
   g.fillStyle = gr; g.fillRect(0, 0, w, h);
-  g.strokeStyle = '#a86a00'; g.lineWidth = 7; g.beginPath(); g.arc(64, 64, 52, 0, Math.PI * 2); g.stroke();
-  g.fillStyle = '#b87400'; g.font = 'bold 64px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('$', 64, 68);
+  g.strokeStyle = 'rgba(120,70,0,.55)'; g.lineWidth = 5; g.beginPath(); g.arc(128, 128, 104, 0, 7); g.stroke();
+  hexPath(g, 128, 128, 62); g.strokeStyle = 'rgba(110,62,0,.6)'; g.lineWidth = 6; g.stroke();
+  g.fillStyle = 'rgba(110,62,0,.55)'; g.font = '700 74px "Barlow Condensed","Noto Sans TC",sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('$', 128, 132);
 });
+const coinBumpTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+  g.fillStyle = '#7a7a7a'; g.fillRect(0, 0, 256, 256);
+  g.fillStyle = '#ffffff'; g.beginPath(); g.arc(128, 128, 126, 0, 7); g.arc(128, 128, 106, 0, 7, true); g.fill(); // 凸起外圈
+  for (let i = 0; i < 48; i++) { const a = i / 48 * Math.PI * 2; g.fillStyle = '#bdbdbd'; g.beginPath(); g.arc(128 + Math.cos(a) * 98, 128 + Math.sin(a) * 98, 2.4, 0, 7); g.fill(); } // 珠圈
+  hexPath(g, 128, 128, 64); g.strokeStyle = '#ffffff'; g.lineWidth = 9; g.stroke();
+  g.fillStyle = '#ffffff'; g.font = '700 74px "Barlow Condensed","Noto Sans TC",sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('$', 128, 132);
+  return new THREE.CanvasTexture(c);
+})();
+const coinEdgeTex = (() => { // 齒邊
+  const c = document.createElement('canvas'); c.width = 256; c.height = 16; const g = c.getContext('2d');
+  for (let i = 0; i < 64; i++) { g.fillStyle = i % 2 ? '#404040' : '#ffffff'; g.fillRect(i * 4, 0, 4, 16); }
+  const t = new THREE.CanvasTexture(c); t.wrapS = THREE.RepeatWrapping; t.repeat.set(2, 1); return t;
+})();
 const M = {
-  gold: new THREE.MeshStandardMaterial({ color: 0xffc23a, metalness: 1, roughness: 0.28 }),
-  coinFace: new THREE.MeshStandardMaterial({ color: 0xffffff, map: coinFaceTex, metalness: 0.9, roughness: 0.3 }),
-  chrome: new THREE.MeshStandardMaterial({ color: 0xe0e4f0, metalness: 1, roughness: 0.15 }),
-  red: new THREE.MeshPhysicalMaterial({ color: 0xe0102a, metalness: 0.1, roughness: 0.15, clearcoat: 1, clearcoatRoughness: 0.05 }),
-  wood: new THREE.MeshStandardMaterial({ color: 0x7a3e14, roughness: 0.6, metalness: 0.1 }),
-  pink: new THREE.MeshStandardMaterial({ color: 0xff8fc0, roughness: 0.35, metalness: 0.1 }),
-  sack: new THREE.MeshStandardMaterial({ color: 0xa8733a, roughness: 0.9 }),
-  purple: new THREE.MeshStandardMaterial({ color: 0x7b3cff, roughness: 0.35, metalness: 0.2 }),
-  teal: new THREE.MeshStandardMaterial({ color: 0x18c9b0, roughness: 0.35, metalness: 0.2 }),
+  gold: new THREE.MeshStandardMaterial({ color: 0xffc23a, metalness: 1, roughness: 0.26 }),
+  coinEdge: new THREE.MeshStandardMaterial({ color: 0xf0b230, metalness: 1, roughness: 0.32, bumpMap: coinEdgeTex, bumpScale: 1.2 }),
+  coinFace: new THREE.MeshStandardMaterial({ color: 0xffffff, map: coinFaceTex, bumpMap: coinBumpTex, bumpScale: 2.2, metalness: 1, roughness: 0.3 }),
+  chrome: new THREE.MeshStandardMaterial({ color: 0xd8dade, metalness: 1, roughness: 0.14 }),
+  red: new THREE.MeshPhysicalMaterial({ color: 0xd0081e, metalness: 0.1, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.04 }),
+  lacquer: new THREE.MeshPhysicalMaterial({ color: 0x050505, metalness: 0.2, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.06 }),
+  charcoal: new THREE.MeshPhysicalMaterial({ color: 0x202020, metalness: 0.3, roughness: 0.45, clearcoat: 0.6, clearcoatRoughness: 0.2 }),
+  pearl: new THREE.MeshPhysicalMaterial({ color: 0xf5f5f5, metalness: 0, roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.08, sheen: 0.4 }),
+  leather: new THREE.MeshPhysicalMaterial({ color: 0x141414, roughness: 0.62, metalness: 0, sheen: 0.6, sheenColor: new THREE.Color(0x555555) }),
+  crystal: new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: 0.02, transmission: LOWFX ? 0 : 0.9, thickness: 0.4, ior: 2.2, clearcoat: 1 }),
+  steel: new THREE.MeshStandardMaterial({ color: 0xb8bcc4, metalness: 1, roughness: 0.32 }),
   white: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 }),
-  rope: new THREE.MeshStandardMaterial({ color: 0xe8d2a0, roughness: 0.8, emissive: 0x332200 }),
-  black: new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.5 }),
+  rope: new THREE.MeshStandardMaterial({ color: 0xd8b04a, metalness: 0.85, roughness: 0.38 }),
+  black: new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.4 }),
+  goldGlow: new THREE.MeshBasicMaterial({ color: 0xffc000 }),
 };
+M.wood = M.leather; M.sack = M.leather; M.pink = M.pearl; M.purple = M.lacquer; M.teal = M.charcoal;
 
 // ====================== 機台外觀 ======================
 const blinkers = [];
-const RAMP_DEF = { z: -2.55, x0: -3.95, y0: 2.2, x1: -2.2, y1: 1.15, w: 0.24 };
-const POOL = { xHalf: 4.2, front: 4.0, back: -7, wallZ: -3.0, pusherHalfD: 2.2, pusherH: 0.6 };
+const RAMP_DEF = { z: -1.65, x0: -3.95, y0: 2.2, x1: -2.2, y1: 1.15, w: 0.24 };
+const POOL = { xHalf: 4.2, front: 4.0, back: -7, wallZ: -2.0, pusherHalfD: 2.2, pusherH: 0.6 };
 {
   // 金幣池底板
   const floorTex = canvasTex(256, 256, (g, w, h) => {
-    g.fillStyle = '#3a0a3e'; g.fillRect(0, 0, w, h);
-    g.strokeStyle = 'rgba(255,120,220,.18)'; g.lineWidth = 2;
-    for (let i = 0; i <= w; i += 32) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i, h); g.stroke(); g.beginPath(); g.moveTo(0, i); g.lineTo(w, i); g.stroke(); }
+    g.fillStyle = '#0c0c0c'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(255,255,255,.07)'; g.lineWidth = 2; // 六角形網格（品牌幾何）
+    const R = 22, hx = R * Math.sqrt(3);
+    for (let row = -1; row < h / (R * 1.5) + 1; row++) for (let col = -1; col < w / hx + 1; col++) { hexPath(g, col * hx + (row % 2 ? hx / 2 : 0), row * R * 1.5, R - 2, Math.PI / 6); g.stroke(); }
   });
   floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping; floorTex.repeat.set(3, 4);
   const floor = new THREE.Mesh(new THREE.BoxGeometry(POOL.xHalf * 2 + 0.4, 0.3, POOL.front - POOL.back),
-    new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.55, metalness: 0.3 }));
+    new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.42, metalness: 0.55 }));
   floor.position.set(0, -0.15, (POOL.front + POOL.back) / 2); floor.receiveShadow = true; scene.add(floor);
   // 前方出口洞
   const pit = new THREE.Mesh(new THREE.BoxGeometry(POOL.xHalf * 2 + 0.4, 0.05, 1.6), new THREE.MeshBasicMaterial({ color: 0x000000 }));
   pit.position.set(0, -1.2, POOL.front + 0.8); scene.add(pit);
-  const lip = new THREE.Mesh(new THREE.BoxGeometry(POOL.xHalf * 2 + 0.4, 0.08, 0.08), new THREE.MeshBasicMaterial({ color: 0xffd040 }));
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(POOL.xHalf * 2 + 0.4, 0.06, 0.06), M.goldGlow);
   lip.position.set(0, 0.0, POOL.front); scene.add(lip);
-  const frontBar = new THREE.Mesh(new THREE.BoxGeometry(POOL.xHalf * 2 + 1.4, 0.25, 0.25), new THREE.MeshBasicMaterial({ color: 0xff2fa0 }));
+  const frontBar = new THREE.Mesh(new THREE.BoxGeometry(POOL.xHalf * 2 + 1.4, 0.25, 0.25), M.lacquer);
   frontBar.position.set(0, -0.9, POOL.front + 1.7); scene.add(frontBar);
   // 側面玻璃
-  const glass = new THREE.MeshPhysicalMaterial({ color: 0x99ccff, transparent: true, opacity: 0.14, roughness: 0.05, metalness: 0, depthWrite: false });
+  const glass = new THREE.MeshPhysicalMaterial({ color: 0xffffff, transparent: true, opacity: 0.08, roughness: 0.05, metalness: 0, depthWrite: false });
   for (const s of [-1, 1]) {
     const g = new THREE.Mesh(new THREE.BoxGeometry(0.12, 2.6, POOL.front - POOL.back), glass);
     g.position.set(s * (POOL.xHalf + 0.12), 1.3, (POOL.front + POOL.back) / 2); scene.add(g);
     const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, POOL.front - POOL.back, 12), M.chrome);
     rail.rotation.x = Math.PI / 2; rail.position.set(s * (POOL.xHalf + 0.12), 2.6, (POOL.front + POOL.back) / 2); scene.add(rail);
-    const neon = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, POOL.front - POOL.back), new THREE.MeshBasicMaterial({ color: s < 0 ? 0xff40c0 : 0x40e0ff }));
+    const neon = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, POOL.front - POOL.back), M.goldGlow);
     neon.position.set(s * (POOL.xHalf + 0.12), 0.05, (POOL.front + POOL.back) / 2); scene.add(neon);
     // 燈柱
     for (let k = 0; k < 6; k++) {
-      const b = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 8), new THREE.MeshBasicMaterial({ color: k % 2 ? 0xffe070 : 0xff5090 }));
+      const b = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 8), new THREE.MeshBasicMaterial({ color: k % 2 ? 0xffc000 : 0xffffff }));
       b.position.set(s * (POOL.xHalf + 0.6), 0.4 + k * 0.55, POOL.front - 0.8); b.userData.blink = k; scene.add(b); blinkers.push(b);
     }
-    const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.4, 3.6, 0.4), new THREE.MeshStandardMaterial({ color: 0x2a1048, metalness: 0.6, roughness: 0.3 }));
+    const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.4, 3.6, 0.4), M.lacquer);
     pillar.position.set(s * (POOL.xHalf + 0.6), 1.6, POOL.front - 0.8); pillar.position.z -= 0.25; scene.add(pillar);
   }
   // 後牆（推板上方）
   const wallTex = canvasTex(1024, 256, (g, w, h) => {
-    const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#4a0d6e'); gr.addColorStop(1, '#1b0430');
-    g.fillStyle = gr; g.fillRect(0, 0, w, h);
-    g.strokeStyle = '#ffcf4a'; g.lineWidth = 10; g.strokeRect(8, 8, w - 16, h - 16);
-    g.font = '900 120px "Noto Sans TC","Noto Sans CJK TC","Microsoft JhengHei",sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.shadowColor = '#ff9d00'; g.shadowBlur = 30; g.fillStyle = '#ffe066'; g.fillText('幸運推金幣', w / 2, h / 2 + 6);
+    g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(255,255,255,.06)'; g.lineWidth = 2;
+    for (let x = 0; x < w + 40; x += 38) for (let y = 0; y < h + 40; y += 33) { hexPath(g, x + ((y / 33) % 2 ? 19 : 0), y, 18); g.stroke(); }
+    g.fillStyle = '#ffc000'; g.fillRect(0, h - 10, w, 10); g.fillRect(0, 0, w, 3);
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff';
+    g.font = '400 92px "Noto Sans TC","Noto Sans CJK TC","Microsoft JhengHei",sans-serif'; g.fillText('幸運推金幣', w / 2, h / 2 - 14);
+    g.font = '500 30px "Barlow Condensed",sans-serif'; g.fillStyle = '#ffc000'; g.fillText('L U C K Y   C O I N   P U S H E R', w / 2, h / 2 + 62);
   });
   const wall = new THREE.Mesh(new THREE.BoxGeometry(POOL.xHalf * 2 + 0.4, 2.6, 0.3),
-    [M.chrome, M.chrome, M.chrome, M.chrome, new THREE.MeshStandardMaterial({ map: wallTex, emissive: 0xffffff, emissiveMap: wallTex, emissiveIntensity: 0.28, roughness: 0.5 }), M.chrome]);
+    [M.lacquer, M.lacquer, M.chrome, M.lacquer, new THREE.MeshStandardMaterial({ map: wallTex, emissive: 0xffffff, emissiveMap: wallTex, emissiveIntensity: 0.35, roughness: 0.35, metalness: 0.2 }), M.lacquer]);
   wall.position.set(0, 0.62 + 1.3, POOL.wallZ - 0.15); wall.castShadow = true; scene.add(wall);
   // 左上出幣口 + 斜坡（視覺）
-  const chute = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.9, 20, 1, true), new THREE.MeshStandardMaterial({ color: 0xb08030, metalness: 0.9, roughness: 0.45, side: THREE.DoubleSide }));
+  const chute = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.9, 20, 1, true), new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.9, roughness: 0.3, side: THREE.DoubleSide }));
   chute.rotation.z = Math.PI / 2; chute.position.set(-POOL.xHalf - 0.25, 2.62, RAMP_DEF.z); scene.add(chute);
-  const chuteRing = new THREE.Mesh(new THREE.TorusGeometry(0.47, 0.06, 8, 24), new THREE.MeshBasicMaterial({ color: 0xff4070 }));
+  const chuteRing = new THREE.Mesh(new THREE.TorusGeometry(0.47, 0.05, 8, 24), M.goldGlow);
   chuteRing.position.set(-POOL.xHalf + 0.2, 2.62, RAMP_DEF.z); chuteRing.rotation.y = Math.PI / 2; scene.add(chuteRing);
   // 上方大螢幕背板
   const backTex = canvasTex(1024, 512, (g, w, h) => {
-    const gr = g.createRadialGradient(w / 2, h * 0.55, 30, w / 2, h / 2, w * 0.7);
-    gr.addColorStop(0, '#5a1a8a'); gr.addColorStop(0.5, '#28085a'); gr.addColorStop(1, '#0a0220');
-    g.fillStyle = gr; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 300; i++) { g.fillStyle = `rgba(255,${200 + Math.random() * 55},${150 + Math.random() * 100},${Math.random() * 0.8})`; g.beginPath(); g.arc(Math.random() * w, Math.random() * h, Math.random() * 2.2, 0, 7); g.fill(); }
-    g.strokeStyle = 'rgba(255,90,200,.25)'; g.lineWidth = 2;
-    for (let i = 0; i < 14; i++) { g.beginPath(); g.moveTo(w / 2, h * 1.1); g.lineTo(i * w / 13, 0); g.stroke(); }
+    g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
+    const sp = g.createRadialGradient(w / 2, h * 0.35, 10, w / 2, h * 0.4, w * 0.55); sp.addColorStop(0, 'rgba(255,255,255,.10)'); sp.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = sp; g.fillRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(255,255,255,.05)'; g.lineWidth = 1.5;
+    for (let x = 0; x < w + 30; x += 28) for (let y = 0; y < h + 30; y += 24) { hexPath(g, x + ((y / 24) % 2 ? 14 : 0), y, 13); g.stroke(); }
+    g.fillStyle = 'rgba(255,192,0,.55)'; g.fillRect(0, h * 0.92, w, 2);
   });
   const back = new THREE.Mesh(new THREE.PlaneGeometry(90, 34), new THREE.MeshBasicMaterial({ map: backTex }));
   back.position.set(0, 8, -22); scene.add(back);
 }
 // ====================== 物理世界 ======================
 // 輕微向前傾斜的重力（模擬機台微傾），讓金幣堆更容易被推動
-const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -14, 0.8) });
+const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -14, 0.3) });
 world.broadphase = new CANNON.SAPBroadphase(world);
 world.allowSleep = true;
 world.solver.iterations = 5;
 const matCoin = new CANNON.Material('coin'), matStatic = new CANNON.Material('static'), matPusher = new CANNON.Material('pusher');
 world.addContactMaterial(new CANNON.ContactMaterial(matCoin, matCoin, { friction: 0.15, restitution: 0.05 }));
-world.addContactMaterial(new CANNON.ContactMaterial(matCoin, matStatic, { friction: 0.12, restitution: 0.08 }));
+world.addContactMaterial(new CANNON.ContactMaterial(matCoin, matStatic, { friction: 0.2, restitution: 0.08 }));
 world.addContactMaterial(new CANNON.ContactMaterial(matCoin, matPusher, { friction: 0.35, restitution: 0.02 }));
 function staticBox(hx, hy, hz, x, y, z) {
   const b = new CANNON.Body({ mass: 0, material: matStatic });
@@ -221,31 +247,31 @@ const RAMP = (() => {
   body.position.set(mid.x, mid.y, mid.z); body.quaternion.setFromEuler(0, 0, ang); world.addBody(body);
   const g = new THREE.Group(); g.position.copy(mid); g.rotation.z = ang;
   const base = new THREE.Mesh(new THREE.BoxGeometry(len, 0.1, d.w * 2), M.gold); base.receiveShadow = true; g.add(base);
-  for (const sz of [-1, 1]) { const lip = new THREE.Mesh(new THREE.BoxGeometry(len, 0.6, 0.06), new THREE.MeshStandardMaterial({ color: 0xff4fa0, metalness: 0.5, roughness: 0.3, transparent: true, opacity: 0.55 })); lip.position.set(0, 0.3, sz * d.w); g.add(lip); }
+  for (const sz of [-1, 1]) { const lip = new THREE.Mesh(new THREE.BoxGeometry(len, 0.6, 0.06), new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: 0.05, transparent: true, opacity: 0.18 })); lip.position.set(0, 0.3, sz * d.w); g.add(lip); }
   scene.add(g);
   return { dir, normal, z: d.z, top: new THREE.Vector3(d.x0 + dir.x * 0.25, d.y0 + dir.y * 0.25, d.z) };
 })();
-const PUSH = { mid: -1.35, amp: 1.1, w: (Math.PI * 2) / 4.6 };
+const PUSH = { mid: -0.75, amp: 1.35, w: (Math.PI * 2) / 4.6 };
 const pusherFront = (t) => PUSH.mid + PUSH.amp * Math.sin(PUSH.w * t);
 const pusherVel = (t) => PUSH.amp * PUSH.w * Math.cos(PUSH.w * t);
 const pusherMesh = new THREE.Group();
 {
   const top = canvasTex(512, 256, (g, w, h) => {
-    g.fillStyle = '#c8ccd8'; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(255,255,255,${Math.random() * .15})`; g.fillRect(0, Math.random() * h, w, 2); }
+    g.fillStyle = '#9da1a8'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 260; i++) { g.fillStyle = `rgba(${Math.random() < .5 ? '255,255,255' : '0,0,0'},${Math.random() * .12})`; g.fillRect(0, Math.random() * h, w, 1); } // 髮絲紋
   });
   const body = new THREE.Mesh(new THREE.BoxGeometry((POOL.xHalf - 0.03) * 2, POOL.pusherH, POOL.pusherHalfD * 2),
-    new THREE.MeshStandardMaterial({ map: top, metalness: 0.95, roughness: 0.22 }));
+    new THREE.MeshStandardMaterial({ map: top, metalness: 1, roughness: 0.3 }));
   body.castShadow = true; body.receiveShadow = true; pusherMesh.add(body);
-  const stripe = new THREE.Mesh(new THREE.BoxGeometry((POOL.xHalf - 0.03) * 2, 0.14, 0.04), new THREE.MeshBasicMaterial({ color: 0x40f0ff }));
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry((POOL.xHalf - 0.03) * 2, 0.06, 0.04), M.goldGlow);
   stripe.position.set(0, 0.05, POOL.pusherHalfD + 0.01); pusherMesh.add(stripe);
   scene.add(pusherMesh);
 }
 
 // 金幣（InstancedMesh）
 const COIN_R = 0.32, COIN_H = 0.09;
-const coinGeo = new THREE.CylinderGeometry(COIN_R, COIN_R, COIN_H, 22);
-const coinMesh = new THREE.InstancedMesh(coinGeo, [M.gold, M.coinFace, M.coinFace], HARD_CAP + 10);
+const coinGeo = new THREE.CylinderGeometry(COIN_R, COIN_R, COIN_H, 28);
+const coinMesh = new THREE.InstancedMesh(coinGeo, [M.coinEdge, M.coinFace, M.coinFace], HARD_CAP + 10);
 coinMesh.castShadow = true; coinMesh.receiveShadow = true; coinMesh.count = 0;
 coinMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); coinMesh.frustumCulled = false;
 coinMesh.layers.set(2); scene.add(coinMesh);
@@ -350,12 +376,30 @@ function spawnChuteCoin() {
   }
   return ok;
 }
-// 天降金幣：隨機角度與旋轉，翻滾落下
+// 側邊倒入：左右兩側固定的倒幣口輪流把金幣倒進池中，帶隨機角度翻滾
+const SPOUTS = [-1, 1].map(sx => ({ sx, x: sx * (POOL.xHalf - 1.5), y: 2.2, z: 1.3 }));
+let spoutTurn = 0;
+// 倒幣口外觀：黑色烤漆倒幣槽從兩側伸進池子上方＋金色出口框＋上方漏斗
+for (const sp of SPOUTS) {
+  const g = new THREE.Group(); g.position.set(sp.sx * (POOL.xHalf - 0.75), sp.y + 0.15, sp.z);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.42, 1.0), M.lacquer); body.castShadow = true; g.add(body);
+  const top = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.03, 1.0), M.charcoal); top.position.y = 0.22; g.add(top);
+  const hop = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.28, 0.55, 6, 1, true), M.lacquer); hop.position.set(sp.sx * 0.25, 0.5, 0); g.add(hop);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.03, 6, 6), M.goldGlow); ring.rotation.x = Math.PI / 2; ring.rotation.z = Math.PI / 6; ring.position.set(sp.sx * 0.25, 0.78, 0); g.add(ring);
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.26, 0.8), new THREE.MeshBasicMaterial({ color: 0x000000 })); mouth.position.set(-sp.sx * 0.66, -0.02, 0); g.add(mouth);
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.34, 0.9), M.goldGlow); frame.position.set(-sp.sx * 0.655, -0.02, 0); g.add(frame);
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 0.8), M.chrome); lip.position.set(-sp.sx * 0.78, -0.2, 0); lip.rotation.z = sp.sx * 0.35; g.add(lip);
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.03, 0.02), M.goldGlow); stripe.position.set(0, -0.12, 0.51); g.add(stripe);
+  scene.add(g); sp.frame = frame;
+}
 function spawnDropCoin() {
-  const q = new CANNON.Quaternion().setFromEuler(rand(0, Math.PI * 2), rand(0, Math.PI * 2), rand(0, Math.PI * 2));
-  const v = new CANNON.Vec3(rand(-0.6, 0.6), rand(-3, -0.5), rand(-0.6, 0.6));
-  const w = new CANNON.Vec3(rand(-12, 12), rand(-6, 6), rand(-12, 12));
-  return addFreeCoin(rand(-POOL.xHalf + 0.6, POOL.xHalf - 0.6), rand(3.2, 6.5), rand(-2.4, POOL.front - 1.0), q, v, w, HARD_CAP);
+  const sp = SPOUTS[spoutTurn]; spoutTurn ^= 1;
+  const q = new CANNON.Quaternion().setFromEuler(rand(-0.6, 0.6), rand(0, Math.PI * 2), Math.PI / 2 * sp.sx + rand(-0.5, 0.5));
+  const v = new CANNON.Vec3(-sp.sx * rand(1.6, 3.2), rand(-0.4, 0.6), rand(-0.9, 0.9));
+  const w = new CANNON.Vec3(rand(-8, 8), rand(-4, 4), rand(-10, 10));
+  const ok = addFreeCoin(sp.x, sp.y + rand(-0.05, 0.05), sp.z + rand(-0.35, 0.35), q, v, w, HARD_CAP);
+  if (ok) sp.flash = 1;
+  return ok;
 }
 
 // 初始金幣堆與紅球
@@ -377,12 +421,12 @@ function initPool() {
 
 // ====================== 上方吊掛道具 ======================
 const ROWS = [
-  { z: -5, y: 6.4, range: 8.5, spacing: 3.4, speed: 0.75, values: [5, 8, 10, 12, 15, 20], scale: 1.0, color: '#3ff' },
-  { z: -9.5, y: 8.4, range: 11, spacing: 4.4, speed: 0.6, values: [30, 40, 50, 60, 80], scale: 1.25, color: '#ff5ad0' },
-  { z: -14, y: 10.6, range: 14, spacing: 5.6, speed: 0.45, values: [100, 120, 150, 200, 300], scale: 1.55, color: '#ffd040' },
+  { z: -5, y: 6.4, range: 8.5, spacing: 3.4, speed: 0.75, values: [5, 8, 10, 12, 15, 20], scale: 1.0, color: '#ffffff' },
+  { z: -9.5, y: 8.4, range: 11, spacing: 4.4, speed: 0.6, values: [30, 40, 50, 60, 80], scale: 1.25, color: '#969696' },
+  { z: -14, y: 10.6, range: 14, spacing: 5.6, speed: 0.45, values: [100, 120, 150, 200, 300], scale: 1.55, color: '#ffc000' },
 ];
 const items = [];
-const railMat = new THREE.MeshStandardMaterial({ color: 0x6a6f80, metalness: 0.8, roughness: 0.45 });
+const railMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, metalness: 1, roughness: 0.25 });
 const itemsRoot = new THREE.Group(); scene.add(itemsRoot);
 for (const r of ROWS) {
   const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.06 * r.scale, 0.06 * r.scale, r.range * 2 + 6, 10), railMat);
@@ -393,63 +437,81 @@ for (const r of ROWS) {
 
 function labelTexture(value, color) {
   return canvasTex(256, 100, (g, w, h) => {
-    g.fillStyle = 'rgba(20,4,40,.88)'; g.strokeStyle = color; g.lineWidth = 6;
-    const r = 30; g.beginPath(); g.moveTo(r, 4); g.arcTo(w - 4, 4, w - 4, h - 4, r); g.arcTo(w - 4, h - 4, 4, h - 4, r); g.arcTo(4, h - 4, 4, 4, r); g.arcTo(4, 4, w - 4, 4, r); g.closePath(); g.fill(); g.stroke();
-    const cg = g.createRadialGradient(46, 42, 4, 52, 50, 30); cg.addColorStop(0, '#fff6c0'); cg.addColorStop(0.6, '#ffc400'); cg.addColorStop(1, '#b36b00');
-    g.fillStyle = cg; g.beginPath(); g.arc(52, 50, 28, 0, 7); g.fill();
-    g.fillStyle = '#9a5800'; g.font = 'bold 34px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('$', 52, 52);
-    g.fillStyle = '#ffe680'; g.font = '900 54px sans-serif'; g.textAlign = 'left'; g.shadowColor = '#ff9d00'; g.shadowBlur = 12;
-    g.fillText('×' + value, 90, 54);
+    g.fillStyle = 'rgba(0,0,0,.9)'; g.fillRect(2, 8, w - 4, h - 16);
+    g.fillStyle = color; g.fillRect(2, 8, 8, h - 16); // 左側色條（直角，無圓角）
+    g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 2; g.strokeRect(2, 8, w - 4, h - 16);
+    hexPath(g, 50, 50, 25); g.fillStyle = '#ffc000'; g.fill();
+    g.fillStyle = '#000'; g.font = '700 32px "Barlow Condensed",sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('$', 50, 52);
+    g.fillStyle = '#fff'; g.font = '600 58px "Barlow Condensed","Noto Sans TC",sans-serif'; g.textAlign = 'left';
+    g.fillText('×' + value, 86, 54);
   });
 }
 
 function makeModel(kind, s) {
   const g = new THREE.Group(); let r = 0.6 * s;
   const add = (geo, mat, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); m.castShadow = true; g.add(m); return m; };
+  const coin = (rr, hh) => new THREE.CylinderGeometry(rr, rr, hh, 28);
+  const coinMats = [M.coinEdge, M.coinFace, M.coinFace];
   switch (kind) {
-    case 'stack': { for (let i = 0; i < 6; i++) add(new THREE.CylinderGeometry(0.42 * s, 0.42 * s, 0.13 * s, 20), M.gold, Math.sin(i) * 0.03 * s, -0.35 * s + i * 0.14 * s); r = 0.5 * s; break; }
-    case 'sack': {
-      const b = add(new THREE.SphereGeometry(0.55 * s, 20, 16), M.sack, 0, -0.1 * s); b.scale.set(1, 0.9, 1);
-      add(new THREE.CylinderGeometry(0.16 * s, 0.25 * s, 0.25 * s, 12), M.sack, 0, 0.45 * s);
-      add(new THREE.TorusGeometry(0.17 * s, 0.05 * s, 8, 16), M.gold, 0, 0.42 * s, 0, Math.PI / 2);
-      add(new THREE.CylinderGeometry(0.22 * s, 0.22 * s, 0.05 * s, 20), M.gold, 0, -0.05 * s, 0.5 * s, Math.PI / 2);
+    case 'stack': { // 浮雕金幣塔＋黑色底座
+      add(new THREE.CylinderGeometry(0.5 * s, 0.54 * s, 0.1 * s, 6), M.lacquer, 0, -0.45 * s);
+      for (let i = 0; i < 7; i++) add(coin(0.4 * s, 0.11 * s), coinMats, Math.sin(i * 1.7) * 0.025 * s, -0.34 * s + i * 0.12 * s, 0, 0, i * 0.7);
+      add(coin(0.4 * s, 0.11 * s), coinMats, 0.12 * s, 0.55 * s, 0.05 * s, 1.1, 0, 0.3);
+      r = 0.55 * s; break;
+    }
+    case 'sack': { // 黑色皮革錢袋、金色束口與徽章
+      const b = add(new THREE.SphereGeometry(0.55 * s, 28, 20), M.leather, 0, -0.1 * s); b.scale.set(1, 0.92, 0.95);
+      add(new THREE.CylinderGeometry(0.15 * s, 0.24 * s, 0.26 * s, 16), M.leather, 0, 0.45 * s);
+      add(new THREE.TorusGeometry(0.17 * s, 0.035 * s, 10, 24), M.gold, 0, 0.42 * s, 0, Math.PI / 2);
+      add(new THREE.CylinderGeometry(0.2 * s, 0.2 * s, 0.04 * s, 6), M.gold, 0, -0.05 * s, 0.52 * s, Math.PI / 2, 0, Math.PI / 6);
+      for (let i = 0; i < 3; i++) add(coin(0.12 * s, 0.03 * s), coinMats, (i - 1) * 0.12 * s, 0.6 * s + (i % 2) * 0.03 * s, 0, rand(-0.6, 0.6), 0, rand(-0.6, 0.6));
       r = 0.6 * s; break;
     }
-    case 'gift': {
-      const mat = pick([M.purple, M.teal, M.red]);
-      add(new THREE.BoxGeometry(0.9 * s, 0.8 * s, 0.9 * s), mat);
-      add(new THREE.BoxGeometry(0.95 * s, 0.82 * s, 0.16 * s), M.gold); add(new THREE.BoxGeometry(0.16 * s, 0.82 * s, 0.95 * s), M.gold);
-      add(new THREE.TorusGeometry(0.16 * s, 0.05 * s, 8, 16), M.gold, -0.14 * s, 0.5 * s, 0, 0, 0, 0.6);
-      add(new THREE.TorusGeometry(0.16 * s, 0.05 * s, 8, 16), M.gold, 0.14 * s, 0.5 * s, 0, 0, 0, -0.6);
-      r = 0.62 * s; break;
+    case 'gift': { // 鋼琴烤漆禮盒＋金色緞帶
+      const mat = pick([M.lacquer, M.pearl, M.charcoal]);
+      add(new THREE.BoxGeometry(0.9 * s, 0.78 * s, 0.9 * s), mat);
+      add(new THREE.BoxGeometry(0.96 * s, 0.14 * s, 0.96 * s), mat, 0, 0.42 * s);
+      add(new THREE.BoxGeometry(0.98 * s, 0.94 * s, 0.12 * s), M.gold, 0, 0.05 * s); add(new THREE.BoxGeometry(0.12 * s, 0.94 * s, 0.98 * s), M.gold, 0, 0.05 * s);
+      add(new THREE.TorusGeometry(0.15 * s, 0.04 * s, 10, 20), M.gold, -0.13 * s, 0.6 * s, 0, 0, 0, 0.7);
+      add(new THREE.TorusGeometry(0.15 * s, 0.04 * s, 10, 20), M.gold, 0.13 * s, 0.6 * s, 0, 0, 0, -0.7);
+      r = 0.64 * s; break;
     }
-    case 'piggy': {
-      const b = add(new THREE.SphereGeometry(0.55 * s, 22, 16), M.pink); b.scale.set(1.15, 0.95, 0.95);
-      add(new THREE.CylinderGeometry(0.17 * s, 0.17 * s, 0.14 * s, 16), M.pink, 0, 0, 0.58 * s, Math.PI / 2);
-      for (const sx of [-1, 1]) { add(new THREE.ConeGeometry(0.13 * s, 0.22 * s, 10), M.pink, sx * 0.25 * s, 0.5 * s, 0.1 * s); add(new THREE.SphereGeometry(0.05 * s, 8, 8), M.black, sx * 0.2 * s, 0.18 * s, 0.48 * s); }
+    case 'piggy': { // 白色陶瓷金豬（金色細節）
+      const b = add(new THREE.SphereGeometry(0.55 * s, 28, 20), M.pearl); b.scale.set(1.15, 0.95, 0.95);
+      add(new THREE.CylinderGeometry(0.17 * s, 0.17 * s, 0.14 * s, 20), M.pearl, 0, 0, 0.58 * s, Math.PI / 2);
+      add(new THREE.CylinderGeometry(0.13 * s, 0.13 * s, 0.02 * s, 20), M.gold, 0, 0, 0.655 * s, Math.PI / 2);
+      for (const sx of [-1, 1]) {
+        add(new THREE.ConeGeometry(0.13 * s, 0.22 * s, 12), M.pearl, sx * 0.25 * s, 0.5 * s, 0.1 * s);
+        add(new THREE.SphereGeometry(0.05 * s, 10, 10), M.black, sx * 0.2 * s, 0.18 * s, 0.48 * s);
+        for (const sz of [-1, 1]) add(new THREE.CylinderGeometry(0.09 * s, 0.1 * s, 0.22 * s, 12), M.pearl, sx * 0.32 * s, -0.48 * s, sz * 0.25 * s);
+      }
       add(new THREE.BoxGeometry(0.3 * s, 0.04 * s, 0.08 * s), M.black, 0, 0.53 * s, 0);
-      add(new THREE.CylinderGeometry(0.2 * s, 0.2 * s, 0.05 * s, 16), M.gold, 0, 0.6 * s, 0, 0.3);
-      r = 0.65 * s; break;
-    }
-    case 'chest': {
-      add(new THREE.BoxGeometry(1.1 * s, 0.6 * s, 0.75 * s), M.wood, 0, -0.15 * s);
-      add(new THREE.CylinderGeometry(0.375 * s, 0.375 * s, 1.1 * s, 16, 1, false, 0, Math.PI), M.wood, 0, 0.15 * s, 0, 0, 0, Math.PI / 2);
-      add(new THREE.BoxGeometry(1.14 * s, 0.08 * s, 0.79 * s), M.gold, 0, 0.15 * s);
-      add(new THREE.BoxGeometry(0.16 * s, 0.22 * s, 0.06 * s), M.gold, 0, 0.1 * s, 0.4 * s);
-      for (let i = 0; i < 5; i++) add(new THREE.CylinderGeometry(0.13 * s, 0.13 * s, 0.04 * s, 14), M.gold, rand(-0.35, 0.35) * s, 0.42 * s + i * 0.02 * s, rand(-0.15, 0.15) * s, rand(-.4, .4), 0, rand(-.4, .4));
+      add(coin(0.18 * s, 0.05 * s), coinMats, 0, 0.66 * s, 0, Math.PI / 2, 0, 0);
       r = 0.68 * s; break;
     }
-    case 'trophy': {
-      add(new THREE.CylinderGeometry(0.42 * s, 0.18 * s, 0.6 * s, 20, 1, true), M.gold, 0, 0.2 * s);
-      add(new THREE.CylinderGeometry(0.06 * s, 0.06 * s, 0.35 * s, 10), M.gold, 0, -0.27 * s);
-      add(new THREE.BoxGeometry(0.55 * s, 0.18 * s, 0.4 * s), M.purple, 0, -0.5 * s);
-      for (const sx of [-1, 1]) add(new THREE.TorusGeometry(0.16 * s, 0.04 * s, 8, 16, Math.PI), M.gold, sx * 0.42 * s, 0.25 * s, 0, 0, 0, sx * Math.PI / 2);
-      add(new THREE.SphereGeometry(0.12 * s, 12, 10), new THREE.MeshBasicMaterial({ color: 0x66ffff }), 0, 0.55 * s);
-      r = 0.6 * s; break;
+    case 'chest': { // 碳黑寶箱＋金色包角、滿溢金幣
+      add(new THREE.BoxGeometry(1.1 * s, 0.6 * s, 0.75 * s), M.charcoal, 0, -0.15 * s);
+      add(new THREE.CylinderGeometry(0.375 * s, 0.375 * s, 1.1 * s, 20, 1, false, 0, Math.PI), M.charcoal, 0, 0.15 * s, -0.05 * s, -0.5, 0, Math.PI / 2);
+      for (const x of [-0.5, 0.5]) add(new THREE.BoxGeometry(0.06 * s, 0.64 * s, 0.79 * s), M.gold, x * s, -0.15 * s);
+      add(new THREE.BoxGeometry(1.14 * s, 0.06 * s, 0.79 * s), M.gold, 0, 0.15 * s);
+      add(new THREE.BoxGeometry(0.16 * s, 0.2 * s, 0.05 * s), M.gold, 0, 0.02 * s, 0.4 * s);
+      for (let i = 0; i < 9; i++) add(coin(0.13 * s, 0.035 * s), coinMats, rand(-0.4, 0.4) * s, 0.2 * s + rand(0, 0.12) * s, rand(-0.2, 0.25) * s, rand(-.6, .6), 0, rand(-.6, .6));
+      r = 0.7 * s; break;
     }
-    case 'bars': {
-      const bar = new THREE.BoxGeometry(0.5 * s, 0.18 * s, 0.24 * s);
-      [[-0.27, -0.2, 0], [0.27, -0.2, 0], [0, -0.2, 0.26], [-0.14, -0.02, 0.1], [0.14, -0.02, 0.1], [0, 0.16, 0.1]].forEach(([x, y, z]) => add(bar, M.gold, x * s, y * s, z * s));
+    case 'trophy': { // 金盃＋黑色底座＋水晶
+      const pts = [[0.05, -0.1], [0.12, 0], [0.3, 0.15], [0.4, 0.38], [0.42, 0.55], [0.38, 0.56]].map(([x, y]) => new THREE.Vector2(x * s, y * s));
+      add(new THREE.LatheGeometry(pts, 32), M.gold, 0, 0);
+      add(new THREE.CylinderGeometry(0.05 * s, 0.07 * s, 0.32 * s, 14), M.gold, 0, -0.26 * s);
+      add(new THREE.CylinderGeometry(0.22 * s, 0.26 * s, 0.06 * s, 6), M.gold, 0, -0.43 * s);
+      add(new THREE.BoxGeometry(0.56 * s, 0.2 * s, 0.4 * s), M.lacquer, 0, -0.56 * s);
+      for (const sx of [-1, 1]) add(new THREE.TorusGeometry(0.15 * s, 0.035 * s, 10, 20, Math.PI), M.gold, sx * 0.42 * s, 0.3 * s, 0, 0, 0, -sx * Math.PI / 2);
+      add(new THREE.OctahedronGeometry(0.14 * s, 0), M.crystal, 0, 0.75 * s);
+      r = 0.65 * s; break;
+    }
+    case 'bars': { // 梯形金條堆
+      const bar = new THREE.CylinderGeometry(0.2 * s, 0.27 * s, 0.17 * s, 4, 1); bar.rotateY(Math.PI / 4); bar.scale(1.25, 1, 0.62);
+      [[-0.27, -0.2, 0], [0.27, -0.2, 0], [0, -0.2, 0.26], [-0.14, -0.03, 0.1], [0.14, -0.03, 0.1], [0, 0.14, 0.1]].forEach(([x, y, z]) => add(bar, M.gold, x * s, y * s, z * s));
+      add(new THREE.BoxGeometry(0.9 * s, 0.06 * s, 0.7 * s), M.lacquer, 0, -0.32 * s, 0.1 * s);
       r = 0.55 * s; break;
     }
   }
@@ -468,7 +530,7 @@ function buildItem(it) {
   it.value = d.value; it.state = 'hang'; it.hits = 0;
   it.L = rand(1.0, 1.8) * (0.85 + it.rowIdx * 0.15);
   const pivot = new THREE.Group();
-  const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.035 * it.row.scale, 0.035 * it.row.scale, 1, 6), M.rope.clone());
+  const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.03 * it.row.scale, 0.03 * it.row.scale, 1, 8), M.rope.clone());
   rope.scale.y = it.L; rope.position.y = -it.L / 2; pivot.add(rope);
   const hook = new THREE.Mesh(new THREE.TorusGeometry(0.1 * it.row.scale, 0.03 * it.row.scale, 6, 12), M.chrome); pivot.add(hook);
   const mdl = makeModel(d.kind, d.s);
@@ -543,21 +605,19 @@ function breakItem(it) {
 // ====================== 道具 Icon（免費 / 威力） ======================
 function iconTexture(kind) {
   return canvasTex(256, 256, (g, w, h) => {
-    const col = kind === 'free' ? ['#7fffe0', '#00c890', '#004d3a'] : ['#ffb0b0', '#ff2a2a', '#5a0000'];
-    const gr = g.createRadialGradient(128, 110, 10, 128, 128, 120); gr.addColorStop(0, col[0]); gr.addColorStop(0.55, col[1]); gr.addColorStop(1, 'rgba(0,0,0,0)');
-    g.fillStyle = gr; g.beginPath(); g.arc(128, 128, 120, 0, 7); g.fill();
-    g.strokeStyle = '#fff'; g.lineWidth = 8; g.beginPath(); g.arc(128, 128, 92, 0, 7); g.stroke();
-    // 子彈圖示
-    g.save(); g.translate(128, 100); g.rotate(-0.6);
-    g.fillStyle = '#ffd040'; g.beginPath(); g.moveTo(-14, 30); g.lineTo(-14, -12); g.quadraticCurveTo(0, -44, 14, -12); g.lineTo(14, 30); g.closePath(); g.fill();
-    g.fillStyle = '#b07000'; g.fillRect(-16, 26, 32, 10);
+    const accent = kind === 'free' ? '#ffffff' : '#ffc000';
+    hexPath(g, 128, 128, 118, 0); g.fillStyle = 'rgba(0,0,0,.92)'; g.fill();
+    g.lineWidth = 8; g.strokeStyle = accent; g.stroke();
+    hexPath(g, 128, 128, 100, 0); g.lineWidth = 2; g.strokeStyle = 'rgba(255,255,255,.35)'; g.stroke();
+    g.save(); g.translate(128, 92); g.rotate(-0.6);
+    g.fillStyle = '#ffc000'; g.beginPath(); g.moveTo(-13, 28); g.lineTo(-13, -10); g.quadraticCurveTo(0, -42, 13, -10); g.lineTo(13, 28); g.closePath(); g.fill();
+    g.fillStyle = '#fff'; g.fillRect(-15, 24, 30, 9);
     if (kind === 'power') { g.fillStyle = '#fff'; g.beginPath(); g.moveTo(30, -40); g.lineTo(18, -10); g.lineTo(30, -10); g.lineTo(20, 18); g.lineTo(44, -18); g.lineTo(32, -18); g.closePath(); g.fill(); }
     g.restore();
-    g.font = '900 40px "Noto Sans TC","Noto Sans CJK TC","Microsoft JhengHei",sans-serif'; g.textAlign = 'center'; g.fillStyle = '#fff';
-    g.shadowColor = col[2]; g.shadowBlur = 8; g.lineWidth = 6; g.strokeStyle = col[2];
-    const txt = kind === 'free' ? '免費子彈' : '威力子彈';
-    g.strokeText(txt, 128, 175); g.fillText(txt, 128, 175);
-    g.font = '900 28px sans-serif'; const s2 = kind === 'free' ? '10 秒' : '50 秒'; g.strokeText(s2, 128, 208); g.fillText(s2, 128, 208);
+    g.textAlign = 'center'; g.fillStyle = '#fff';
+    g.font = '500 36px "Noto Sans TC","Noto Sans CJK TC","Microsoft JhengHei",sans-serif';
+    g.fillText(kind === 'free' ? '免費子彈' : '威力子彈', 128, 170);
+    g.font = '600 30px "Barlow Condensed",sans-serif'; g.fillStyle = accent; g.fillText(kind === 'free' ? '10 SEC' : '50 SEC', 128, 204);
   });
 }
 const iconTex = { free: iconTexture('free'), power: iconTexture('power') };
@@ -726,37 +786,23 @@ function addPrizeCoins(n, src) {
   S.pendingCoins += n;
   if (S.pendingCoins > 500) { // 超過 500 的部分一次從上方落下
     const excess = S.pendingCoins - 500; S.pendingCoins = 500; S.dumpCoins += excess;
-    toast(`大量金幣 ${excess} 枚從天而降！`);
+    toast(`大量金幣 ${excess} 枚從兩側倒入！`);
   }
   updateHUD();
 }
 let dispenseTimer = 0;
-let spillAcc = 0;
+let pourAcc = 0;
 function updateDispense(dt) {
   dispenseTimer -= dt;
   if (S.pendingCoins > 0 && dispenseTimer <= 0) {
     const ok = spawnChuteCoin(); if (ok) S.pendingCoins--;
     dispenseTimer = ok ? Math.max(dispenseTimer + 0.2, 0.05) : 0.03;
   }
-  // 金幣池滿了（物理上限）：把最前緣的金幣「推」出邊緣掉進出口，騰出空間讓上方金幣持續落下
-  if ((S.dumpCoins > 0 || S.pendingCoins > 0) && coins.length >= HARD_CAP - 12) {
-    spillAcc += dt * 40;
-    let need = Math.min(6, Math.floor(spillAcc)); spillAcc -= need;
-    if (need > 0) {
-      const cand = [];
-      for (const c of coins) if (!c.spill && !c.free && c.body.position.z > POOL.front - 1.6 && c.body.position.y < 0.7) cand.push(c);
-      cand.sort((a, b) => b.body.position.z - a.body.position.z);
-      for (let i = 0; i < need && i < cand.length; i++) {
-        const b = cand[i].body; cand[i].spill = true;
-        b.type = CANNON.Body.KINEMATIC; b.fixedRotation = false; b.updateMassProperties();
-        b.velocity.set(rand(-0.2, 0.2), 0, rand(2.6, 3.4)); b.angularVelocity.set(0, 0, 0); b.wakeUp();
-      }
-    }
-  } else spillAcc = 0;
+  // 池子滿了（物理上限）就先留在倒幣口排隊，等金幣被推出去騰出空間再倒
   if (S.dumpCoins > 0) {
-    let k = 0;
-    while (S.dumpCoins > 0 && k < 8 && spawnDropCoin()) { S.dumpCoins--; k++; }
-  }
+    pourAcc = Math.min(pourAcc + dt * 26, 3);
+    while (S.dumpCoins > 0 && pourAcc >= 1) { if (!spawnDropCoin()) { pourAcc = 0; break; } S.dumpCoins--; pourAcc -= 1; }
+  } else pourAcc = 0;
 }
 
 // ====================== 彩券 ======================
@@ -810,7 +856,7 @@ function openEggs(done) {
     else if (r < 0.75) res = { type: 'ball' };
     else res = { type: 'spin' };
     results.push(res);
-    const txt = res.type === 'coin' ? `🪙${res.n}` : res.type === 'miss' ? '💨落空' : res.type === 'ball' ? '🔴紅球' : '🎡轉盤';
+    const txt = res.type === 'coin' ? `+${res.n} 金幣` : res.type === 'miss' ? '落空' : res.type === 'ball' ? '紅球' : '轉盤 +1';
     el.querySelector('.eggRes')?.remove();
     const tag = document.createElement('div'); tag.className = `eggRes ${res.type}`; tag.textContent = txt;
     tag.style.top = (i % 2 ? 26 : -20) + 'px';
@@ -836,42 +882,51 @@ function updateEggs() {
 
 // ====================== 轉盤 ======================
 const WHEEL = [
-  { t: 'coin', v: 10, c: '#ff4d6d' }, { t: 'diamond', c: '#3a86ff' }, { t: 'coin', v: 20, c: '#ffb703' }, { t: 'dart', c: '#2ec4b6' },
-  { t: 'coin', v: 50, c: '#ff4d6d' }, { t: 'hat', c: '#8338ec' }, { t: 'coin', v: 100, c: '#ffb703' }, { t: 'diamond', c: '#3a86ff' },
-  { t: 'coin', v: 200, c: '#ff4d6d' }, { t: 'dart', c: '#2ec4b6' },
+  { t: 'coin', v: 10, c: '#000000' }, { t: 'diamond', c: '#ffc000' }, { t: 'coin', v: 20, c: '#202020' }, { t: 'dart', c: '#ffc000' },
+  { t: 'coin', v: 50, c: '#000000' }, { t: 'hat', c: '#ffc000' }, { t: 'coin', v: 100, c: '#202020' }, { t: 'diamond', c: '#ffc000' },
+  { t: 'coin', v: 200, c: '#000000' }, { t: 'dart', c: '#ffc000' },
 ];
 const SYM = { diamond: '💎', dart: '🎯', hat: '🎩' };
 const NAME = { diamond: '鑽石', dart: '飛鏢', hat: '魔術帽' };
 const wheelCv = $('wheel'), wg = wheelCv.getContext('2d');
 const SEG = (Math.PI * 2) / WHEEL.length;
 const wheel = { rot: 0, spinning: false, from: 0, to: 0, t: 0, dur: 3.4, target: 0, lastSeg: -1, flash: 0 };
+// 單色向量圖示（取代彩色 emoji）
+function drawSym(g, t, x, y, sz, col) {
+  g.save(); g.translate(x, y); g.fillStyle = col; g.strokeStyle = col; g.lineWidth = sz * 0.12; g.lineJoin = 'miter';
+  if (t === 'diamond') { g.beginPath(); g.moveTo(-sz * .5, -sz * .15); g.lineTo(-sz * .25, -sz * .45); g.lineTo(sz * .25, -sz * .45); g.lineTo(sz * .5, -sz * .15); g.lineTo(0, sz * .5); g.closePath(); g.fill(); g.strokeStyle = 'rgba(0,0,0,.0)'; }
+  else if (t === 'dart') { for (const r of [.48, .3, .12]) { g.beginPath(); g.arc(0, 0, sz * r, 0, 7); r === .12 ? g.fill() : g.stroke(); } }
+  else if (t === 'hat') { g.fillRect(-sz * .3, -sz * .45, sz * .6, sz * .62); g.fillRect(-sz * .52, sz * .17, sz * 1.04, sz * .14); }
+  g.restore();
+}
 function drawWheel() {
   const W = wheelCv.width, cx = W / 2, R = W / 2 - 14;
   wg.clearRect(0, 0, W, W);
   wg.save(); wg.translate(cx, cx);
-  // 外圈燈
-  wg.fillStyle = '#2a0a40'; wg.beginPath(); wg.arc(0, 0, R + 12, 0, 7); wg.fill();
+  // 外圈：黑色＋白／金指示燈
+  wg.fillStyle = '#000'; wg.beginPath(); wg.arc(0, 0, R + 13, 0, 7); wg.fill();
+  wg.strokeStyle = 'rgba(255,255,255,.5)'; wg.lineWidth = 1.5; wg.beginPath(); wg.arc(0, 0, R + 12, 0, 7); wg.stroke();
   for (let i = 0; i < 20; i++) {
     const a = i / 20 * Math.PI * 2; const on = (Math.floor(performance.now() / 180) + i) % 2 === 0 || wheel.spinning && i % 2 === 0;
-    wg.fillStyle = on ? '#fff3a0' : '#a06000'; wg.beginPath(); wg.arc(Math.cos(a) * (R + 6), Math.sin(a) * (R + 6), 4, 0, 7); wg.fill();
+    wg.fillStyle = on ? '#ffc000' : '#494949'; wg.fillRect(Math.cos(a) * (R + 6) - 2.5, Math.sin(a) * (R + 6) - 2.5, 5, 5);
   }
   wg.rotate(wheel.rot);
   WHEEL.forEach((s, i) => {
     const a0 = -Math.PI / 2 + i * SEG, a1 = a0 + SEG;
     wg.fillStyle = s.c; wg.beginPath(); wg.moveTo(0, 0); wg.arc(0, 0, R, a0, a1); wg.closePath(); wg.fill();
-    wg.strokeStyle = '#fff8d0'; wg.lineWidth = 2; wg.stroke();
+    wg.strokeStyle = 'rgba(255,255,255,.35)'; wg.lineWidth = 1.5; wg.stroke();
     wg.save(); wg.rotate(a0 + SEG / 2 + Math.PI / 2);
-    wg.textAlign = 'center'; wg.textBaseline = 'middle'; wg.fillStyle = '#fff';
-    if (s.t === 'coin') { wg.font = '900 26px sans-serif'; wg.strokeStyle = '#4a1a00'; wg.lineWidth = 4; wg.strokeText(s.v, 0, -R * 0.68); wg.fillText(s.v, 0, -R * 0.68); wg.font = 'bold 13px sans-serif'; wg.fillText('金幣', 0, -R * 0.45); }
-    else { wg.font = '30px "Noto Color Emoji",sans-serif'; wg.fillText(SYM[s.t], 0, -R * 0.65); wg.font = 'bold 13px "Noto Sans TC",sans-serif'; wg.fillText(NAME[s.t], 0, -R * 0.4); }
+    wg.textAlign = 'center'; wg.textBaseline = 'middle';
+    if (s.t === 'coin') { wg.fillStyle = '#fff'; wg.font = '600 34px "Barlow Condensed",sans-serif'; wg.fillText(s.v, 0, -R * 0.7); wg.fillStyle = '#969696'; wg.font = '500 12px "Noto Sans TC",sans-serif'; wg.fillText('金幣', 0, -R * 0.47); }
+    else { drawSym(wg, s.t, 0, -R * 0.68, 30, '#000'); wg.fillStyle = '#000'; wg.font = '700 12px "Noto Sans TC",sans-serif'; wg.fillText(NAME[s.t], 0, -R * 0.42); }
     wg.restore();
   });
   wg.restore();
-  const hub = wg.createRadialGradient(cx - 6, cx - 6, 2, cx, cx, 26); hub.addColorStop(0, '#fff8c0'); hub.addColorStop(1, '#c07800');
-  wg.fillStyle = hub; wg.beginPath(); wg.arc(cx, cx, 24, 0, 7); wg.fill();
-  wg.fillStyle = '#6a2a00'; wg.font = '900 14px "Noto Sans TC",sans-serif'; wg.textAlign = 'center'; wg.textBaseline = 'middle'; wg.fillText('轉盤', cx, cx);
-  if (wheel.flash > 0) { wg.fillStyle = `rgba(255,255,200,${wheel.flash * 0.5})`; wg.beginPath(); wg.arc(cx, cx, R, 0, 7); wg.fill(); }
+  hexPathCtx(wg, cx, cx, 27); wg.fillStyle = '#000'; wg.fill(); wg.strokeStyle = '#ffc000'; wg.lineWidth = 3; wg.stroke();
+  wg.fillStyle = '#fff'; wg.font = '600 15px "Barlow Condensed",sans-serif'; wg.textAlign = 'center'; wg.textBaseline = 'middle'; wg.fillText('SPIN', cx, cx + 1);
+  if (wheel.flash > 0) { wg.fillStyle = `rgba(255,255,255,${wheel.flash * 0.4})`; wg.beginPath(); wg.arc(cx, cx, R, 0, 7); wg.fill(); }
 }
+function hexPathCtx(g, x, y, r) { hexPath(g, x, y, r, 0); }
 const segAt = (rot) => Math.floor((((-rot) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) / SEG);
 function startSpin() {
   S.spins--; wheel.spinning = true;
@@ -897,7 +952,7 @@ function onWheelResult(s) {
   const r = stageRect(wheelCv); const x = r.left + r.width / 2, y = r.bottom + 40;
   if (s.t === 'coin') { popup(`轉盤 +${s.v} 金幣`, x, y, 'big'); addPrizeCoins(s.v, 'wheel'); sfx.win(); }
   else {
-    S.collect[s.t]++; popup(`獲得 ${SYM[s.t]} ${NAME[s.t]}`, x, y, 'big'); sfx.big();
+    S.collect[s.t]++; popup(`獲得 ${NAME[s.t]}`, x, y, 'big'); sfx.big();
     const el = $({ diamond: 'colDiamond', dart: 'colDart', hat: 'colHat' }[s.t]); el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
     checkCollect();
   }
@@ -1008,7 +1063,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Space') { e.preventDefault(); if (!minigameActive()) insertCoin(); }
   if (DEBUG) debugKey(e.key);
 });
-$('muteBtn').addEventListener('click', () => { setMuted(!isMuted()); $('muteBtn').textContent = isMuted() ? '🔇 靜音' : '🔊 音效'; });
+$('muteBtn').addEventListener('click', () => { setMuted(!isMuted()); $('muteBtn').textContent = isMuted() ? '音效 OFF' : '音效 ON'; });
 $('ticketMachine').addEventListener('mouseenter', () => updateHUD());
 let tipT = 0;
 $('ticketMachine').addEventListener('pointerdown', (e) => { if (e.pointerType === 'mouse') return; updateHUD(); $('ticketMachine').classList.add('show'); clearTimeout(tipT); tipT = setTimeout(() => $('ticketMachine').classList.remove('show'), 2000); });
@@ -1037,7 +1092,7 @@ function guardPusher(pf) {
   for (const c of coins) {
     const b = c.body, p = b.position;
     if (c.spill || p.y > top + 0.2) continue;
-    if (p.z > pf - 0.7 && p.z < pf + 0.55 && b.sleepState !== 0) b.wakeUp();
+    if (b.sleepState !== 0 && ((p.z > pf - 0.7 && p.z < pf + 0.55) || (v > 0.15 && p.z > pf))) b.wakeUp(); // 推板前進時喚醒前方金幣，讓推力能真實傳遞到整片金幣
     if (p.y < top - 0.015 && p.z < pf + 0.02 && p.z > back - 0.3 && Math.abs(p.x) < POOL.xHalf + 0.05) {
       if (pf - p.z < 0.6) { p.z = pf + 0.3; if (b.velocity.z < v) b.velocity.z = Math.max(v, 0); }
       else { p.y = top + 0.07; b.velocity.y = 0; }
@@ -1060,28 +1115,17 @@ function stepPhysics(dt) {
 function syncPool() {
   const pf = pusherFront(simTime), pv = pusherVel(simTime);
   pusherMesh.position.set(0, POOL.pusherH / 2, pf - POOL.pusherHalfD);
-  // 推板頂面的金幣緩慢往前送，不會在出幣口下方（推板頂、後牆前）堆積堵住出幣口
-  for (const c of coins) {
-    if (c.edge || c.spill) continue;
-    const b = c.body, p = b.position;
-    if (p.y < POOL.pusherH - 0.02 || p.z > pf - 0.05) continue;
-    const nearExit = p.x < RAMP_DEF.x1 + 1.4 && p.z < POOL.wallZ + 1.4;
-    const target = Math.max(pv, 0) + (nearExit ? 1.3 : 0.7);
-    if (b.velocity.z < target) { b.wakeUp(); b.velocity.z = Math.min(target, b.velocity.z + 0.25); }
-    if (nearExit && b.velocity.x < 0.6) { b.wakeUp(); b.velocity.x += 0.15; }
-  }
   // 出幣口落點保持淨空：坡底附近疊高的金幣往池中央推開
   for (const c of coins) {
     if (c.edge || c.spill) continue;
     const b = c.body, p = b.position;
-    if (p.y > 0.68 && p.x < RAMP_DEF.x1 + 1.0 && Math.abs(p.z - RAMP_DEF.z) < 1.0) {
-      b.wakeUp(); if (b.velocity.x < 1.4) b.velocity.x += 0.35; if (b.velocity.z < 1.0) b.velocity.z += 0.2;
+    if (p.y > 0.95 && p.x < RAMP_DEF.x1 + 0.9 && Math.abs(p.z - RAMP_DEF.z) < 0.8) {
+      b.wakeUp(); if (b.velocity.x < 0.8) b.velocity.x += 0.2;
     }
   }
   for (let i = coins.length - 1; i >= 0; i--) {
     const b = coins[i].body, p = b.position;
-    if (coins[i].spill && b.type === CANNON.Body.KINEMATIC && p.z > POOL.front + 0.15) { b.type = CANNON.Body.DYNAMIC; b.updateMassProperties(); b.wakeUp(); b.angularVelocity.set(5, 0, 0); }
-    if (b.fixedRotation && p.z > POOL.front - 0.05) { b.fixedRotation = false; b.updateMassProperties(); b.wakeUp(); b.angularVelocity.set(4, 0, 0); b.velocity.z += 0.3; }
+    if (b.fixedRotation && p.z > POOL.front - 0.05) { b.fixedRotation = false; b.updateMassProperties(); b.wakeUp(); b.angularVelocity.set(1.5, 0, 0); }
     if (p.y < -1.0 || Math.abs(p.x) > POOL.xHalf + 1 || p.z > POOL.front + 2.5) {
       if (p.z > POOL.front - 0.3) { const s = toScreen(new THREE.Vector3(p.x, 0, POOL.front), poolCam); addTickets(1, s.x, s.y); sfx.coin(); }
       if (coins[i].free) { freeCount--; b.removeEventListener('collide', onCoinCollide); }
@@ -1116,7 +1160,7 @@ function loop() {
   $('chargeRing').style.strokeDashoffset = 188.5 * (1 - charge);
   const ch = $('crosshair'); ch.style.left = mousePx.x + 'px'; ch.style.top = mousePx.y + 'px';
   ch.style.display = (modalOpen() || minigameActive() || !aimInside) ? 'none' : 'block';
-  for (const b of blinkers) b.material.color.setHex(((Math.floor(ts * 4) + b.userData.blink) % 2) ? 0xffe070 : 0xff4090);
+  for (const b of blinkers) b.material.color.setHex(((Math.floor(ts * 4) + b.userData.blink) % 2) ? 0xffc000 : 0x494949);
   hudTimer -= dt; if (hudTimer <= 0) { updateHUD(); updateBuffs(); hudTimer = 0.1; }
   // 小遊戲進行中，背景 3D 降頻渲染以節省效能
   if (!minigameActive() || (frameNo++ % 15) === 0) renderViews();

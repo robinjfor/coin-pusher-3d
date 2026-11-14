@@ -38,10 +38,11 @@ function buttons(list) {
 }
 
 // ---------- 共用繪圖 ----------
-function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
-function text(t, x, y, size = 20, color = '#fff', align = 'center', stroke = '#2a0040', weight = 900) {
+function roundRect(x, y, w, h, r) { r = 0; // 直角（Lamborghini：0 圓角）
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function text(t, x, y, size = 20, color = '#fff', align = 'center', stroke = '#000', weight = 500) {
   ctx.font = `${weight} ${size}px ${FONT}`; ctx.textAlign = align; ctx.textBaseline = 'middle';
-  if (stroke) { ctx.lineWidth = Math.max(3, size / 6); ctx.strokeStyle = stroke; ctx.lineJoin = 'round'; ctx.strokeText(t, x, y); }
+  if (stroke) { ctx.lineWidth = Math.max(2, size / 8); ctx.strokeStyle = stroke; ctx.lineJoin = 'miter'; ctx.strokeText(t, x, y); }
   ctx.fillStyle = color; ctx.fillText(t, x, y);
 }
 function coin(x, y, r) {
@@ -50,12 +51,13 @@ function coin(x, y, r) {
   ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
   ctx.strokeStyle = '#8a5000'; ctx.lineWidth = Math.max(1, r * .12); ctx.beginPath(); ctx.arc(x, y, r * .72, 0, TAU); ctx.stroke();
 }
-function bg(c1, c2) {
-  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, c1); g.addColorStop(1, c2);
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+function bg() {
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = 'rgba(255,255,255,.045)'; ctx.lineWidth = 1.5;
+  for (let y = 0, r = 0; y < H + 30; y += 26, r++) for (let x = (r % 2) * 15; x < W + 30; x += 30) { ctx.beginPath(); for (let i = 0; i < 6; i++) { const a = Math.PI / 6 + i * Math.PI / 3; ctx[i ? 'lineTo' : 'moveTo'](x + Math.cos(a) * 14, y + Math.sin(a) * 14); } ctx.closePath(); ctx.stroke(); }
 }
 const sparks = [];
-function burst(x, y, n = 24, color = '#ffd040') { for (let i = 0; i < n; i++) { const a = rand(0, TAU), s = rand(80, 320); sparks.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 100, life: rand(.5, 1.1), color }); } }
+function burst(x, y, n = 24, color = '#ffc000') { for (let i = 0; i < n; i++) { const a = rand(0, TAU), s = rand(80, 320); sparks.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 100, life: rand(.5, 1.1), color }); } }
 function drawSparks(dt) {
   for (let i = sparks.length - 1; i >= 0; i--) {
     const p = sparks[i]; p.life -= dt; if (p.life <= 0) { sparks.splice(i, 1); continue; }
@@ -65,7 +67,7 @@ function drawSparks(dt) {
   ctx.globalAlpha = 1;
 }
 const floats = [];
-function floatText(t, x, y, color = '#ffe066', size = 30) { floats.push({ t, x, y, color, size, life: 1.4 }); }
+function floatText(t, x, y, color = '#ffc000', size = 30) { floats.push({ t, x, y, color, size, life: 1.4 }); }
 function drawFloats(dt) {
   for (let i = floats.length - 1; i >= 0; i--) {
     const f = floats[i]; f.life -= dt; if (f.life <= 0) { floats.splice(i, 1); continue; }
@@ -101,7 +103,7 @@ export function startMinigame(type, onFinish) {
 // 連連看（彈珠台）
 // =====================================================================
 function Plinko(finish) {
-  setTitle('💎 連連看', '移動滑鼠選擇位置，點擊放球！相鄰獎洞都進球，兩邊金幣翻倍！');
+  setTitle('連連看', '移動滑鼠選擇位置，點擊放球！相鄰獎洞都進球，兩邊金幣翻倍！');
   const L = 50, R = 550, HOLE_Y = 650, BOTTOM = 790, BR = 13, PR = 7;
   const HW = (R - L) / 6;
   const pegs = [];
@@ -184,33 +186,33 @@ function Plinko(finish) {
       if (ball) { const sp = Math.hypot(ball.vx, ball.vy); ball.still = sp < 25 ? ball.still + dt : 0; if (ball.still > 0.4) { ball.vx += rand(-120, 120); ball.vy -= 60; ball.still = 0; } }
     },
     draw() {
-      bg('#1a0638', '#3a0a5a');
+      bg();
       // 外框
-      ctx.fillStyle = 'rgba(0,0,0,.35)'; roundRect(L - 14, 130, R - L + 28, BOTTOM - 115, 22); ctx.fill();
-      ctx.strokeStyle = '#ffcf4a'; ctx.lineWidth = 4; roundRect(L - 14, 130, R - L + 28, BOTTOM - 115, 22); ctx.stroke();
+      ctx.fillStyle = '#181818'; roundRect(L - 14, 130, R - L + 28, BOTTOM - 115, 22); ctx.fill();
+      ctx.strokeStyle = '#202020'; ctx.lineWidth = 2; roundRect(L - 14, 130, R - L + 28, BOTTOM - 115, 22); ctx.stroke(); ctx.fillStyle = '#ffc000'; ctx.fillRect(L - 14, 128, R - L + 28, 3);
       // 洞
       for (let i = 0; i < 6; i++) {
         const x = L + i * HW, ho = holes[i];
         const g = ctx.createLinearGradient(0, HOLE_Y, 0, BOTTOM);
-        if (ho.prize) { g.addColorStop(0, doubled(i) ? '#ff4fd8' : ho.h ? '#ffb400' : '#5a2a90'); g.addColorStop(1, '#1a0530'); }
-        else { g.addColorStop(0, '#333'); g.addColorStop(1, '#111'); }
+        if (ho.prize) { const c = doubled(i) ? '#ffc000' : ho.h ? '#494949' : '#202020'; g.addColorStop(0, c); g.addColorStop(1, c); }
+        else { g.addColorStop(0, '#0a0a0a'); g.addColorStop(1, '#0a0a0a'); }
         ctx.fillStyle = g; ctx.fillRect(x + 3, HOLE_Y, HW - 6, BOTTOM - HOLE_Y);
         if (ho.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${ho.flash * .6})`; ctx.fillRect(x + 3, HOLE_Y, HW - 6, BOTTOM - HOLE_Y); }
         const cx = x + HW / 2;
         if (!ho.prize) text('空洞', cx, HOLE_Y + 60, 22, '#999');
         else {
           const v = value(i);
-          text(ho.h === 0 ? '200' : String(v), cx, HOLE_Y + 40, 28, ho.h ? '#fff36b' : '#e0d0ff');
-          text(ho.h === 0 ? '獎洞' : `進球 ${ho.h}`, cx, HOLE_Y + 72, 15, '#fff', 'center', '#2a0040', 700);
-          if (doubled(i)) text('×2', cx, HOLE_Y + 102, 20, '#ff9af0');
+          text(ho.h === 0 ? '200' : String(v), cx, HOLE_Y + 40, 30, doubled(i) ? '#000' : '#fff', 'center', doubled(i) ? null : '#000', 600);
+          text(ho.h === 0 ? '獎洞' : `進球 ${ho.h}`, cx, HOLE_Y + 72, 14, doubled(i) ? '#000' : '#969696', 'center', null, 500);
+          if (doubled(i)) text('×2', cx, HOLE_Y + 102, 22, '#000', 'center', null, 700);
         }
       }
-      ctx.fillStyle = '#ffcf4a';
+      ctx.fillStyle = '#ffffff';
       for (const x of dividers) { ctx.fillRect(x - 4, HOLE_Y, 8, BOTTOM - HOLE_Y); ctx.beginPath(); ctx.arc(x, HOLE_Y, 4, 0, TAU); ctx.fill(); }
       // 釘子
       for (const p of pegs) {
-        ctx.fillStyle = p.glow > 0 ? `rgb(255,${200 + 55 * p.glow},${120 + 135 * p.glow})` : '#d8c8ff';
-        ctx.shadowColor = '#c080ff'; ctx.shadowBlur = 8 + p.glow * 14;
+        ctx.fillStyle = p.glow > 0 ? `rgb(255,${200 + 55 * p.glow},${120 + 135 * p.glow})` : '#7d7d7d';
+        ctx.shadowColor = '#ffc000'; ctx.shadowBlur = 8 + p.glow * 14;
         ctx.beginPath(); ctx.arc(p.x, p.y, PR, 0, TAU); ctx.fill();
       }
       ctx.shadowBlur = 0;
@@ -223,15 +225,15 @@ function Plinko(finish) {
       }
       if (ball) drawBall(ball.x, ball.y);
       // 資訊
-      text('剩餘球數', 90, 40, 20, '#ffe066');
+      text('剩餘球數', 90, 40, 16, '#969696', 'center', null);
       for (let i = 0; i < 4; i++) { ctx.globalAlpha = i < ballsLeft ? 1 : .2; drawBall(45 + i * 30, 80); ctx.globalAlpha = 1; }
-      text('合計', 470, 40, 20, '#ffe066'); text(`${total()} 金幣`, 470, 80, 30, '#fff36b');
-      text('最高 1600', 300, 60, 15, '#d0b0ff', 'center', null, 700);
+      text('合計', 470, 40, 16, '#969696', 'center', null); text(`${total()} 金幣`, 470, 80, 32, '#ffc000', 'center', null, 600);
+      text('最高 1600', 300, 60, 14, '#7d7d7d', 'center', null, 500);
       if (!mouse.inside && state === 'aim') {}
     },
   };
   function drawBall(x, y) {
-    const g = ctx.createRadialGradient(x - 4, y - 4, 1, x, y, BR); g.addColorStop(0, '#ffffff'); g.addColorStop(.5, '#c0d8ff'); g.addColorStop(1, '#4060a0');
+    const g = ctx.createRadialGradient(x - 4, y - 4, 1, x, y, BR); g.addColorStop(0, '#ffffff'); g.addColorStop(.5, '#d8dade'); g.addColorStop(1, '#5a5a5a');
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, BR, 0, TAU); ctx.fill();
   }
 }
@@ -240,12 +242,12 @@ function Plinko(finish) {
 // 飛鏢
 // =====================================================================
 function Darts(finish) {
-  setTitle('🎯 飛鏢', '瞄準旋轉的輪盤，點擊射出飛鏢！每射一鏢，會有兩格變成空格');
+  setTitle('飛鏢', '瞄準旋轉的輪盤，點擊射出飛鏢！每射一鏢，會有兩格變成空格');
   const CX = 300, CY = 440, R = 260, N = 12, SEG = TAU / N;
   const pool = [50, 100, 150, 200, 250, 300, 400, 500, 600, 800, 1000, 100];
   for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
   const segs = pool.map((v) => ({ v, empty: false, flash: 0 }));
-  const colors = ['#ff4d6d', '#ffb703', '#3a86ff', '#2ec4b6', '#8338ec', '#fb5607'];
+  const colors = ['#000000', '#202020'];
   let rot = 0, speed = 3, spdMul = 0.9 + Math.random() * 0.25, t = 0, dartsLeft = 3, total = 0, fly = null, stuck = [], state = 'aim', timer = 0, hits = [];
 
   function emptyTwo() {
@@ -291,45 +293,45 @@ function Darts(finish) {
       }
     },
     draw() {
-      bg('#0b1a3a', '#2a0650');
+      bg();
       // 背光
-      const g0 = ctx.createRadialGradient(CX, CY, R * .6, CX, CY, R + 60); g0.addColorStop(0, 'rgba(255,200,80,.25)'); g0.addColorStop(1, 'rgba(255,200,80,0)');
+      const g0 = ctx.createRadialGradient(CX, CY, R * .6, CX, CY, R + 60); g0.addColorStop(0, 'rgba(255,255,255,.06)'); g0.addColorStop(1, 'rgba(255,255,255,0)');
       ctx.fillStyle = g0; ctx.fillRect(0, 0, W, H);
-      ctx.fillStyle = '#2a1040'; ctx.beginPath(); ctx.arc(CX, CY, R + 16, 0, TAU); ctx.fill();
-      for (let i = 0; i < 24; i++) { const a = i / 24 * TAU; ctx.fillStyle = (Math.floor(t * 6) + i) % 2 ? '#fff3a0' : '#a06000'; ctx.beginPath(); ctx.arc(CX + Math.cos(a) * (R + 8), CY + Math.sin(a) * (R + 8), 4, 0, TAU); ctx.fill(); }
+      ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(CX, CY, R + 16, 0, TAU); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 1.5; ctx.stroke();
+      for (let i = 0; i < 24; i++) { const a = i / 24 * TAU; ctx.fillStyle = (Math.floor(t * 6) + i) % 2 ? '#ffc000' : '#494949'; ctx.beginPath(); ctx.arc(CX + Math.cos(a) * (R + 8), CY + Math.sin(a) * (R + 8), 4, 0, TAU); ctx.fill(); }
       ctx.save(); ctx.translate(CX, CY); ctx.rotate(rot);
       segs.forEach((s, i) => {
         const a0 = i * SEG, a1 = a0 + SEG;
-        ctx.fillStyle = s.empty ? '#2b2b35' : colors[i % colors.length];
+        ctx.fillStyle = s.empty ? '#0a0a0a' : s.v >= 500 ? '#ffc000' : colors[i % colors.length];
         ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, R, a0, a1); ctx.closePath(); ctx.fill();
         if (s.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${s.flash * .7})`; ctx.fill(); }
-        ctx.strokeStyle = '#fff8d0'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,.3)'; ctx.lineWidth = 1.5; ctx.stroke();
         ctx.save(); ctx.rotate(a0 + SEG / 2);
-        if (s.empty) text('空', R * .68, 0, 24, '#777', 'center', '#000');
-        else { text(String(s.v), R * .7, 0, s.v >= 1000 ? 26 : 28, '#fff'); }
+        if (s.empty) text('空', R * .68, 0, 22, '#494949', 'center', null);
+        else { text(String(s.v), R * .7, 0, s.v >= 1000 ? 30 : 32, s.v >= 500 ? '#000' : '#fff', 'center', null, 600); }
         ctx.restore();
       });
-      ctx.fillStyle = '#ffd040'; ctx.beginPath(); ctx.arc(0, 0, 26, 0, TAU); ctx.fill();
-      ctx.fillStyle = '#ff3355'; ctx.beginPath(); ctx.arc(0, 0, 12, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(0, 0, 26, 0, TAU); ctx.fill(); ctx.strokeStyle = '#ffc000'; ctx.lineWidth = 3; ctx.stroke();
+      ctx.fillStyle = '#ffc000'; ctx.beginPath(); ctx.arc(0, 0, 12, 0, TAU); ctx.fill();
       for (const sd of stuck) drawDart(Math.cos(sd.a + 0) * sd.d, Math.sin(sd.a) * sd.d, 1, -rot);
       ctx.restore();
       if (fly) { const u = fly.t, x = fly.x0 + (fly.x - fly.x0) * u, y = fly.y0 + (fly.y - fly.y0) * u - Math.sin(u * Math.PI) * 80; drawDart(x, y, 2.2 - 1.2 * u, 0); }
       // 準星
       if (state === 'aim' && mouse.inside) {
-        ctx.strokeStyle = '#7ff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(mouse.x, mouse.y, 16, 0, TAU); ctx.stroke();
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(mouse.x, mouse.y, 16, 0, TAU); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(mouse.x - 24, mouse.y); ctx.lineTo(mouse.x + 24, mouse.y); ctx.moveTo(mouse.x, mouse.y - 24); ctx.lineTo(mouse.x, mouse.y + 24); ctx.stroke();
       }
-      text('剩餘飛鏢', 90, 40, 20, '#ffe066');
+      text('剩餘飛鏢', 90, 40, 16, '#969696', 'center', null);
       for (let i = 0; i < 3; i++) { ctx.globalAlpha = i < dartsLeft ? 1 : .2; drawDart(45 + i * 36, 70, 1, 0); ctx.globalAlpha = 1; }
-      text('累計', 490, 40, 20, '#ffe066'); text(`${total} 金幣`, 490, 80, 30, '#fff36b');
-      text('點擊輪盤射出飛鏢', 300, 770, 20, '#fff');
+      text('累計', 490, 40, 16, '#969696', 'center', null); text(`${total} 金幣`, 490, 80, 32, '#ffc000', 'center', null, 600);
+      text('點擊輪盤射出飛鏢', 300, 770, 16, '#969696', 'center', null);
     },
   };
   function drawDart(x, y, s, extraRot) {
     ctx.save(); ctx.translate(x, y); ctx.rotate(extraRot); ctx.scale(s, s);
     ctx.strokeStyle = '#ddd'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(14, 24); ctx.stroke();
     ctx.fillStyle = '#333'; ctx.fillRect(12, 22, 6, 16);
-    ctx.fillStyle = '#ff3355'; ctx.beginPath(); ctx.moveTo(15, 36); ctx.lineTo(4, 50); ctx.lineTo(15, 44); ctx.lineTo(26, 50); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ffc000'; ctx.beginPath(); ctx.moveTo(15, 36); ctx.lineTo(4, 50); ctx.lineTo(15, 44); ctx.lineTo(26, 50); ctx.closePath(); ctx.fill();
     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0, 0, 2.5, 0, TAU); ctx.fill();
     ctx.restore();
   }
@@ -343,7 +345,7 @@ function Hats(finish) {
     { c: 2, r: 1, p: 200 }, { c: 2, r: 1, p: 500 }, { c: 1, r: 2, p: 1000 },
     { c: 1, r: 2, p: 1500 }, { c: 2, r: 2, p: 2000 }, { c: 1, r: 3, p: 2500 },
   ];
-  setTitle('🎩 魔術帽', '記住金幣的位置！選中金幣即可晉級，選到兔子只能拿上一局的獎金');
+  setTitle('魔術帽', '記住金幣的位置！選中金幣即可晉級，選到兔子只能拿上一局的獎金');
   let round = 0, lastWon = 0, hats = [], phase = 'show', timer = 0, swap = null, swapsLeft = 0, chosen = -1, hover = -1, revealAll = 0;
   const TABLE_Y = 560;
   function slotX(i, n) { const sp = n === 3 ? 180 : 138; return W / 2 + (i - (n - 1) / 2) * sp; }
@@ -415,22 +417,22 @@ function Hats(finish) {
       else if (phase === 'revealAll') { for (const h of hats) h.lift = Math.min(1, h.lift + dt * 2); }
     },
     draw() {
-      bg('#3a0614', '#12020a');
+      bg();
       // 布幕
-      for (let i = 0; i < 12; i++) { const x = i * 52; const g = ctx.createLinearGradient(x, 0, x + 52, 0); g.addColorStop(0, '#6a0a1e'); g.addColorStop(.5, '#b0183a'); g.addColorStop(1, '#6a0a1e'); ctx.fillStyle = g; ctx.fillRect(x, 0, 52, 440); }
+      for (let i = 0; i < 12; i++) { const x = i * 52; const g = ctx.createLinearGradient(x, 0, x + 52, 0); g.addColorStop(0, '#050505'); g.addColorStop(.5, '#1c1c1c'); g.addColorStop(1, '#050505'); ctx.fillStyle = g; ctx.fillRect(x, 0, 52, 440); }
       const sg = ctx.createRadialGradient(W / 2, 470, 40, W / 2, 470, 460); sg.addColorStop(0, 'rgba(255,240,200,.35)'); sg.addColorStop(1, 'rgba(0,0,0,.5)'); ctx.fillStyle = sg; ctx.fillRect(0, 0, W, H);
       // 桌子
-      ctx.fillStyle = '#5a2a10'; ctx.fillRect(W / 2 - 290, TABLE_Y + 20, 580, 90);
-      ctx.fillStyle = '#1f6b3a'; ctx.beginPath(); ctx.ellipse(W / 2, TABLE_Y + 20, 290, 70, 0, 0, TAU); ctx.fill();
-      ctx.strokeStyle = '#ffcf4a'; ctx.lineWidth = 5; ctx.stroke();
+      ctx.fillStyle = '#181818'; ctx.fillRect(W / 2 - 290, TABLE_Y + 20, 580, 90);
+      ctx.fillStyle = '#202020'; ctx.beginPath(); ctx.ellipse(W / 2, TABLE_Y + 20, 290, 70, 0, 0, TAU); ctx.fill();
+      ctx.strokeStyle = '#ffc000'; ctx.lineWidth = 2; ctx.stroke();
       // 進度條
       ROUNDS.forEach((r, i) => {
         const x = 110 + (i % 3) * 190, y = 40 + Math.floor(i / 3) * 52;
-        ctx.fillStyle = i === round ? '#ffcf4a' : i < round || (i === round && lastWon === r.p) ? '#7a5a10' : 'rgba(0,0,0,.5)';
-        roundRect(x - 80, y - 20, 160, 40, 12); ctx.fill(); ctx.strokeStyle = '#ffcf4a'; ctx.lineWidth = 2; ctx.stroke();
-        text(`第${i + 1}局 ${r.p}`, x, y, 18, i === round ? '#3a1a00' : '#fff', 'center', null);
+        ctx.fillStyle = i === round ? '#ffc000' : i < round || (i === round && lastWon === r.p) ? '#494949' : '#000';
+        roundRect(x - 80, y - 20, 160, 40, 12); ctx.fill(); ctx.strokeStyle = i === round ? '#ffc000' : 'rgba(255,255,255,.35)'; ctx.lineWidth = 1; ctx.stroke();
+        text(`第${i + 1}局 ${r.p}`, x, y, 17, i === round ? '#000' : '#fff', 'center', null);
       });
-      text(`目前可得：${lastWon} 金幣`, W / 2, 150, 22, '#ffe066');
+      text(`目前可得 ${lastWon} 金幣`, W / 2, 150, 22, '#ffc000', 'center', null, 600);
       // 內容物
       const k = hats.length > 3 ? 0.95 : 1.15;
       for (const h of hats) if (h.lift > 0.05 || phase === 'show') { ctx.save(); ctx.translate(h.x, h.y); ctx.scale(k, k); drawContent(h.content, 0, 0); ctx.restore(); }
@@ -440,7 +442,7 @@ function Hats(finish) {
         const i = hats.indexOf(h);
         ctx.save(); ctx.translate(h.x, h.y + h.dy - h.lift * 170); ctx.scale(k, k); drawHat(0, 0, i === hover, i === chosen); ctx.restore();
       }
-      if (phase === 'pick') text('點擊選擇帽子', W / 2, 760, 24, '#fff');
+      if (phase === 'pick') text('點擊選擇帽子', W / 2, 760, 18, '#969696', 'center', null);
     },
   };
   function drawContent(c, x, y) {
@@ -458,15 +460,15 @@ function Hats(finish) {
   }
   function drawHat(x, y, hl, ch) {
     ctx.save();
-    if (hl || ch) { ctx.shadowColor = '#ffd040'; ctx.shadowBlur = 30; }
+    if (hl || ch) { ctx.shadowColor = 'rgba(255,255,255,.6)'; ctx.shadowBlur = 24; }
     ctx.fillStyle = '#151515'; ctx.beginPath(); ctx.ellipse(x, y, 66, 16, 0, 0, TAU); ctx.fill();
     const g = ctx.createLinearGradient(x - 46, 0, x + 46, 0); g.addColorStop(0, '#0a0a0a'); g.addColorStop(.35, '#3a3a40'); g.addColorStop(1, '#0a0a0a');
     ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(x - 44, y - 2); ctx.lineTo(x - 48, y - 120); ctx.lineTo(x + 48, y - 120); ctx.lineTo(x + 44, y - 2); ctx.closePath(); ctx.fill();
     ctx.shadowBlur = 0;
-    ctx.fillStyle = '#c8102e'; ctx.fillRect(x - 45, y - 34, 90, 18);
-    ctx.fillStyle = '#ffd040'; ctx.fillRect(x - 10, y - 36, 20, 22);
+    ctx.fillStyle = '#ffc000'; ctx.fillRect(x - 45, y - 34, 90, 10);
+    ctx.fillStyle = '#000'; ctx.fillRect(x - 10, y - 36, 20, 22);
     ctx.fillStyle = '#2a2a30'; ctx.beginPath(); ctx.ellipse(x, y - 120, 48, 11, 0, 0, TAU); ctx.fill();
-    if (hl) { ctx.strokeStyle = '#ffd040'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, y, 66, 16, 0, 0, TAU); ctx.stroke(); }
+    if (hl) { ctx.strokeStyle = '#ffc000'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, y, 66, 16, 0, 0, TAU); ctx.stroke(); }
     ctx.restore();
   }
 }
