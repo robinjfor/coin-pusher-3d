@@ -246,7 +246,7 @@ function Darts(finish) {
   for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
   const segs = pool.map((v) => ({ v, empty: false, flash: 0 }));
   const colors = ['#ff4d6d', '#ffb703', '#3a86ff', '#2ec4b6', '#8338ec', '#fb5607'];
-  let rot = 0, speed = 1.7, t = 0, dartsLeft = 3, total = 0, fly = null, stuck = [], state = 'aim', timer = 0, hits = [];
+  let rot = 0, speed = 3, spdMul = 0.9 + Math.random() * 0.25, t = 0, dartsLeft = 3, total = 0, fly = null, stuck = [], state = 'aim', timer = 0, hits = [];
 
   function emptyTwo() {
     const cand = segs.map((s, i) => i).filter((i) => !segs[i].empty);
@@ -267,7 +267,7 @@ function Darts(finish) {
     total += v; hits.push(v);
     floatText(label, x, y - 30, v ? '#ffe066' : '#bbb', 34);
     setSub(`第 ${3 - dartsLeft} 鏢：${v ? v + ' 金幣' : label}　累計 ${total} 金幣`);
-    if (dartsLeft > 0) { state = 'wait'; timer = 0.6; }
+    if (dartsLeft > 0) { state = 'wait'; timer = 0.6; spdMul = 0.9 + Math.random() * 0.25; }
     else { state = 'end'; timer = 1.2; }
   }
   return {
@@ -276,7 +276,7 @@ function Darts(finish) {
       dartsLeft--; fly = { x0: x + 40, y0: H + 40, x, y, t: 0 }; state = 'fly'; sfx.whoosh();
     },
     update(dt) {
-      t += dt; speed = 1.6 + Math.sin(t * 0.7) * 0.8; rot += speed * dt;
+      t += dt; speed = (2.9 + Math.sin(t * 0.9) * 1.4) * spdMul; rot += speed * dt; // 約為原本 1.8 倍
       for (const s of segs) s.flash = Math.max(0, s.flash - dt * 1.2);
       if (state === 'fly') { fly.t += dt / 0.28; if (fly.t >= 1) { const f = fly; fly = null; impact(f.x, f.y); } }
       else if (state === 'wait') { timer -= dt; if (timer <= 0) { emptyTwo(); state = 'aim'; } }
