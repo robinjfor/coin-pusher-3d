@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#07020f" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<title>3D 推金幣射擊機</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🪙</text></svg>" />
+<link rel="stylesheet" href="style.css" />
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+    "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="stage">
+  <div id="hud">
+    <div id="leftPanel" class="panel">
+      <div class="row"><span class="label">子彈</span><span id="bullets" class="bigNum">20</span></div>
+      <button id="insertBtn" class="btn gold">投幣 +10</button>
+      <div class="small">已投幣 <span id="inserted">0</span> 次</div>
+      <div id="buffs">
+        <div id="buffFree" class="buff free hidden"><span class="bname">免費</span><div class="bbar"><i></i></div><span class="btime">10</span></div>
+        <div id="buffPower" class="buff power hidden"><span class="bname">威力</span><div class="bbar"><i></i></div><span class="btime">50</span></div>
+      </div>
+    </div>
+
+    <div id="wheelBox">
+      <div id="wheelPointer"></div>
+      <canvas id="wheel" width="300" height="300"></canvas>
+      <div id="spinsLeft">剩餘轉盤次數：<b>0</b></div>
+    </div>
+
+    <div id="rightPanel" class="panel">
+      <div class="collect" id="colDiamond"><span class="ico">💎</span><span class="pips"><i></i><i></i><i></i></span><span class="cnt">0/3</span></div>
+      <div class="collect" id="colDart"><span class="ico">🎯</span><span class="pips"><i></i><i></i><i></i></span><span class="cnt">0/3</span></div>
+      <div class="collect" id="colHat"><span class="ico">🎩</span><span class="pips"><i></i><i></i><i></i></span><span class="cnt">0/3</span></div>
+      <div class="eggRow"><span class="label">金蛋</span><div id="eggSlots"><div class="egg"></div><div class="egg"></div><div class="egg"></div></div></div>
+    </div>
+
+    <div id="divider">
+      <div class="marquee">★ 幸運推金幣 ★</div>
+      <div class="dinfo">出幣中 <b id="dispQueue">0</b>　上方落下 <b id="dumpQueue">0</b>　池中 <b id="poolCount">0</b></div>
+    </div>
+
+    <div id="bottomLeft" class="panel">
+      <div class="label">蓄力</div>
+      <div id="chargeBar"><i></i><span class="mk m1">近</span><span class="mk m2">中</span><span class="mk m3">遠</span></div>
+    </div>
+
+    <div id="ticketMachine">
+      <div class="tmHead">
+        <div class="tmTitle">彩券機</div>
+        <div id="ticketLed">00000</div>
+      </div>
+      <div class="tmSlot"></div>
+      <div id="ticketStrip"></div>
+      <div id="ticketTip">目前彩券：<b>0</b> 張</div>
+    </div>
+
+    <div id="bottomRight" class="panel">
+      <button id="muteBtn" class="btn">🔊 音效</button>
+      <button id="helpBtn" class="btn">❓ 說明</button>
+    </div>
+  </div>
+
+  <div id="fx">
+    <div id="popups"></div>
+    <div id="crosshair">
+      <svg viewBox="0 0 80 80" width="64" height="64">
+        <circle cx="40" cy="40" r="30" class="ring-bg"/>
+        <circle cx="40" cy="40" r="30" class="ring" id="chargeRing"/>
+        <line x1="40" y1="4" x2="40" y2="18"/><line x1="40" y1="62" x2="40" y2="76"/>
+        <line x1="4" y1="40" x2="18" y2="40"/><line x1="62" y1="40" x2="76" y2="40"/>
+        <circle cx="40" cy="40" r="3" class="dot"/>
+      </svg>
+    </div>
+    <div id="toast"></div>
+  </div>
+
+  <div id="eggPanel" class="modal hidden">
+    <div class="modalBox">
+      <h2>金蛋開獎！</h2>
+      <div id="eggRow"></div>
+      <button id="eggOk" class="btn gold hidden">收下</button>
+    </div>
+  </div>
+
+  <div id="helpPanel" class="modal hidden">
+    <div class="modalBox help">
+      <h2>玩法說明</h2>
+      <ul>
+        <li>按「投幣 +10」取得金幣子彈（電腦也可按空白鍵）。</li>
+        <li>在上方畫面瞄準（滑鼠移動或手指點按），<b>按住蓄力</b>、放開射擊；蓄力越久射得越遠，遠處道具金幣更多。</li>
+        <li>金幣越多的道具繩子越難斷，偶爾會「爆擊」大幅提升斷繩機率。</li>
+        <li>斷繩：獲得道具金幣（滾入金幣池）＋ 1 顆金蛋；集滿 3 顆開蛋。</li>
+        <li>轉盤集滿 3 個 💎／🎯／🎩 分別進入 連連看／飛鏢／魔術帽 小遊戲。</li>
+        <li>射中飛過的「免費子彈」10 秒不耗子彈；「威力子彈」50 秒斷繩機率提升。</li>
+        <li>金幣被推進前方洞口：每枚 1 張彩券，紅球 20 張。按住／滑過彩券機可查看彩券數。</li>
+      </ul>
+      <button id="helpOk" class="btn gold">開始遊戲</button>
+    </div>
+  </div>
+
+  <div id="mgOverlay" class="hidden">
+    <div class="mgPanel">
+      <div class="mgTitle" id="mgTitle">小遊戲</div>
+      <div class="mgSub" id="mgSub"></div>
+      <canvas id="mgCanvas" width="600" height="820"></canvas>
+      <div class="mgButtons" id="mgButtons"></div>
+    </div>
+  </div>
+
+  <div id="debugPanel" class="hidden">
+    <button data-d="egg">+金蛋</button>
+    <button data-d="eggs3">開蛋</button>
+    <button data-d="spin">+轉盤</button>
+    <button data-d="plinko">連連看</button>
+    <button data-d="darts">飛鏢</button>
+    <button data-d="hats">魔術帽</button>
+    <button data-d="coins">+600幣</button>
+    <button data-d="free">免費</button>
+    <button data-d="power">威力</button>
+    <button data-d="break">斷繩</button>
+  </div>
+
+  <div id="loading"><div class="spinner"></div><div>推金幣機台啟動中…</div></div>
+</div>
+<script type="module" src="game.js"></script>
+</body>
+</html>
