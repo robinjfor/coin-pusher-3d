@@ -24,7 +24,8 @@ const S = {
   pendingCoins: 0, dumpCoins: 0,
   totalWon: 0, broken: 0, hits: 0, shots: 0,
 };
-const MAX_COINS = 420, HARD_CAP = 520;
+// 金幣池不設數量上限（改用睡眠、簡化碰撞、只更新移動中的金幣等方式優化）
+const COIN_CAP0 = 2048;
 const FREE_DUR = 10, POWER_DUR = 50;
 const now = () => performance.now() / 1000;
 
@@ -227,6 +228,8 @@ const matCoin = new CANNON.Material('coin'), matStatic = new CANNON.Material('st
 world.addContactMaterial(new CANNON.ContactMaterial(matCoin, matCoin, { friction: 0.07, restitution: 0.05 }));
 world.addContactMaterial(new CANNON.ContactMaterial(matCoin, matStatic, { friction: 0.2, restitution: 0.08 }));
 world.addContactMaterial(new CANNON.ContactMaterial(matCoin, matPusher, { friction: 0.35, restitution: 0.02 }));
+const matWall = new CANNON.Material('wall'); // 滾道擋板：無摩擦，立著滾的金幣貼著擋板也不會被摩擦力卡住
+world.addContactMaterial(new CANNON.ContactMaterial(matCoin, matWall, { friction: 0, restitution: 0.05 }));
 function staticBox(hx, hy, hz, x, y, z) {
   const b = new CANNON.Body({ mass: 0, material: matStatic });
   b.addShape(new CANNON.Box(new CANNON.Vec3(hx, hy, hz))); b.position.set(x, y, z); world.addBody(b); return b;
@@ -247,14 +250,16 @@ const RAMP = (() => {
   const mid = new THREE.Vector3((d.x0 + d.x1) / 2, (d.y0 + d.y1) / 2, d.z).addScaledVector(normal, -0.05);
   const body = new CANNON.Body({ mass: 0, material: matStatic });
   body.addShape(new CANNON.Box(new CANNON.Vec3(len / 2, 0.05, d.w)));
-  body.addShape(new CANNON.Box(new CANNON.Vec3(len / 2, 0.3, 0.03)), new CANNON.Vec3(0, 0.3, d.w));
-  body.addShape(new CANNON.Box(new CANNON.Vec3(len / 2, 0.3, 0.03)), new CANNON.Vec3(0, 0.3, -d.w));
-  body.addShape(new CANNON.Box(new CANNON.Vec3(len / 2, 0.3, 0.012)), new CANNON.Vec3(0, 0.3, 0)); // 中間分隔：兩條滾道
+  // 擋板與分隔在坡底收短（垂直於坡面的擋板上緣會凸出坡底，金幣離開時會被勾住）
+  const WL = len / 2 - 0.2, WO = -0.2, LIPZ = 0.19, wallShape = (hz) => { const sh = new CANNON.Box(new CANNON.Vec3(WL, 0.3, hz)); sh.material = matWall; return sh; }; // 每條滾道內寬 0.12，只容得下一枚立著的金幣（不會兩枚並排卡住）
+  body.addShape(wallShape(0.03), new CANNON.Vec3(WO, 0.3, LIPZ));
+  body.addShape(wallShape(0.03), new CANNON.Vec3(WO, 0.3, -LIPZ));
+  body.addShape(wallShape(0.04), new CANNON.Vec3(WO, 0.3, 0)); // 中間分隔：兩條滾道
   body.position.set(mid.x, mid.y, mid.z); body.quaternion.setFromEuler(0, 0, ang); world.addBody(body);
   const g = new THREE.Group(); g.position.copy(mid); g.rotation.z = ang;
   const base = new THREE.Mesh(new THREE.BoxGeometry(len, 0.1, d.w * 2), M.gold); base.receiveShadow = true; g.add(base);
-  for (const sz of [-1, 1]) { const lip = new THREE.Mesh(new THREE.BoxGeometry(len, 0.6, 0.06), new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: 0.05, transparent: true, opacity: 0.18 })); lip.position.set(0, 0.3, sz * d.w); g.add(lip); }
-  { const mid = new THREE.Mesh(new THREE.BoxGeometry(len, 0.6, 0.024), M.chrome); mid.position.set(0, 0.3, 0); g.add(mid); }
+  for (const sz of [-1, 1]) { const lip = new THREE.Mesh(new THREE.BoxGeometry(WL * 2, 0.6, 0.06), new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: 0.05, transparent: true, opacity: 0.18 })); lip.position.set(WO, 0.3, sz * LIPZ); g.add(lip); }
+  { const mid = new THREE.Mesh(new THREE.BoxGeometry(WL * 2, 0.6, 0.08), M.chrome); mid.position.set(WO, 0.3, 0); g.add(mid); }
   scene.add(g);
   return { dir, normal, z: d.z, top: new THREE.Vector3(d.x0 + dir.x * 0.25, d.y0 + dir.y * 0.25, d.z) };
 })();
@@ -278,10 +283,20 @@ const pusherMesh = new THREE.Group();
 // 金幣（InstancedMesh）
 const COIN_R = 0.256, COIN_H = 0.072; // 縮小約 20%
 const coinGeo = new THREE.CylinderGeometry(COIN_R, COIN_R, COIN_H, LITE ? 18 : 26);
-const coinMesh = new THREE.InstancedMesh(coinGeo, [M.coinEdge, M.coinFace, M.coinFace], HARD_CAP + 10);
-coinMesh.castShadow = true; coinMesh.receiveShadow = true; coinMesh.count = 0;
-coinMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); coinMesh.frustumCulled = false;
-coinMesh.layers.set(2); scene.add(coinMesh);
+let coinMesh = makeCoinMesh(COIN_CAP0);
+function makeCoinMesh(cap) {
+  const m = new THREE.InstancedMesh(coinGeo, [M.coinEdge, M.coinFace, M.coinFace], cap);
+  m.castShadow = true; m.receiveShadow = true; m.count = 0;
+  m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.frustumCulled = false;
+  m.layers.set(2); scene.add(m); return m;
+}
+// 容量不夠時自動加倍（不限制金幣數量）
+function ensureCoinCap(n) {
+  if (n <= coinMesh.instanceMatrix.count) return;
+  let cap = coinMesh.instanceMatrix.count; while (cap < n) cap *= 2;
+  const old = coinMesh; coinMesh = makeCoinMesh(cap); scene.remove(old); old.dispose();
+  for (const c of coins) c.dirty = true;
+}
 // 金幣閃光：少量星芒點精靈（單一 Points、加法混合），隨機附著在金幣上閃爍
 const SPARK_N = LITE ? 40 : 80;
 const sparkGeo = new THREE.BufferGeometry();
@@ -324,6 +339,68 @@ function updateSparkles(dt) {
 }
 const coinShape = new CANNON.Box(new CANNON.Vec3(0.225, COIN_H / 2, 0.225));
 const coins = []; // {body}
+
+// ====================== 快速碰撞：平躺金幣用解析圓盤碰撞 ======================
+// 落定的平躺金幣（鎖定旋轉、只有 yaw）視為直立圓盤；圓盤對圓盤、圓盤對軸向靜態方塊（底板、牆、推板）
+// 用解析解算出「單一接觸點」，取代 cannon 預設的凸多面體 SAT + 多點裁切，大幅降低窄相與約束數量。
+const DISC_R = 0.235, DISC_H = COIN_H / 2;
+const isFlatCoin = (b, s) => s === coinShape && b.fixedRotation;
+const isAxisBox = (b, q) => (b.type !== CANNON.Body.DYNAMIC) && Math.abs(q.w) > 0.99999;
+const _np = world.narrowphase, _boxBoxSAT = _np.boxBox;
+function pushContact(np, bi, bj, si, sj, rsi, rsj, nx, ny, nz, pix, piy, piz, pjx, pjy, pjz) {
+  const r = np.createContactEquation(bi, bj, si, sj, rsi, rsj);
+  r.ni.set(nx, ny, nz);
+  r.ri.set(pix - bi.position.x, piy - bi.position.y, piz - bi.position.z);
+  r.rj.set(pjx - bj.position.x, pjy - bj.position.y, pjz - bj.position.z);
+  np.result.push(r); np.createFrictionEquationsFromContact(r, np.frictionResult);
+}
+function discDisc(np, si, sj, xi, xj, bi, bj, rsi, rsj, justTest) {
+  const dx = xj.x - xi.x, dy = xj.y - xi.y, dz = xj.z - xi.z, d2 = dx * dx + dz * dz, D = DISC_R * 2;
+  if (d2 >= D * D || Math.abs(dy) >= DISC_H * 2) return false;
+  if (justTest) return true;
+  const d = Math.sqrt(d2), ph = D - d, pv = DISC_H * 2 - Math.abs(dy);
+  if (pv <= ph * 1.5 || d < 1e-4) { // 疊在上面／下面：垂直法線，接觸點在兩圓心的水平中點
+    const sy = dy >= 0 ? 1 : -1, cx = xi.x + dx / 2, cz = xi.z + dz / 2;
+    pushContact(np, bi, bj, si, sj, rsi, rsj, 0, sy, 0, cx, xi.y + sy * DISC_H, cz, cx, xj.y - sy * DISC_H, cz);
+  } else { // 同一層側面相碰：水平法線
+    const nx = dx / d, nz = dz / d, my = (xi.y + xj.y) / 2;
+    pushContact(np, bi, bj, si, sj, rsi, rsj, nx, 0, nz, xi.x + nx * DISC_R, my, xi.z + nz * DISC_R, xj.x - nx * DISC_R, my, xj.z - nz * DISC_R);
+  }
+  return true;
+}
+// c = 金幣圓盤中心, x/h = 方塊中心與半長；coinIsI 決定法線方向（cannon 的法線由 i 指向 j）
+function discBox(np, si, sj, xi, xj, bi, bj, rsi, rsj, justTest, coinIsI) {
+  const c = coinIsI ? xi : xj, x = coinIsI ? xj : xi, h = (coinIsI ? sj : si).halfExtents;
+  const qx = Math.max(x.x - h.x, Math.min(x.x + h.x, c.x)), qz = Math.max(x.z - h.z, Math.min(x.z + h.z, c.z));
+  const ddx = c.x - qx, ddz = c.z - qz, dist2 = ddx * ddx + ddz * ddz;
+  if (dist2 >= DISC_R * DISC_R) return false;
+  const top = x.y + h.y, bot = x.y - h.y;
+  if (c.y - DISC_H >= top || c.y + DISC_H <= bot) return false;
+  if (justTest) return true;
+  // 候選：上面、下面、側面（取穿透最小者）
+  let best = top - (c.y - DISC_H), nx = 0, ny = 1, nz = 0; // 法線：由方塊指向金幣
+  const pDown = (c.y + DISC_H) - bot; if (pDown < best) { best = pDown; ny = -1; }
+  let sx = 0, sz = 0, ps;
+  if (dist2 > 1e-10) { const dist = Math.sqrt(dist2); ps = DISC_R - dist; sx = ddx / dist; sz = ddz / dist; }
+  else { // 圓心在方塊投影內：找最近的側面
+    const l = c.x - (x.x - h.x), r = (x.x + h.x) - c.x, b = c.z - (x.z - h.z), f = (x.z + h.z) - c.z;
+    ps = Math.min(l, r, b, f); if (ps === l) sx = -1; else if (ps === r) sx = 1; else if (ps === b) sz = -1; else sz = 1; ps += DISC_R;
+  }
+  let pcx, pcy, pcz, pbx, pby, pbz;
+  if (ps < best) { nx = sx; ny = 0; nz = sz; pcx = c.x - sx * DISC_R; pcy = c.y; pcz = c.z - sz * DISC_R; pbx = dist2 > 1e-10 ? qx : (sx ? x.x + sx * h.x : c.x); pby = c.y; pbz = dist2 > 1e-10 ? qz : (sz ? x.z + sz * h.z : c.z); }
+  else { pcx = qx; pcz = qz; pcy = c.y - ny * DISC_H; pbx = qx; pbz = qz; pby = ny > 0 ? top : bot; }
+  if (coinIsI) pushContact(np, bi, bj, si, sj, rsi, rsj, -nx, -ny, -nz, pcx, pcy, pcz, pbx, pby, pbz);
+  else pushContact(np, bi, bj, si, sj, rsi, rsj, nx, ny, nz, pbx, pby, pbz, pcx, pcy, pcz);
+  return true;
+}
+_np.boxBox = function (si, sj, xi, xj, qi, qj, bi, bj, rsi, rsj, justTest) {
+  const fi = isFlatCoin(bi, si), fj = isFlatCoin(bj, sj);
+  if (fi && fj) return discDisc(this, si, sj, xi, xj, bi, bj, rsi, rsj, justTest);
+  if (fi && isAxisBox(bj, qj)) return discBox(this, si, sj, xi, xj, bi, bj, rsi, rsj, justTest, true);
+  if (fj && isAxisBox(bi, qi)) return discBox(this, si, sj, xi, xj, bi, bj, rsi, rsj, justTest, false);
+  return _boxBoxSAT.call(this, si, sj, xi, xj, qi, qj, bi, bj, rsi, rsj, justTest);
+};
+// （enableFrictionReduction 會讓立著滾的金幣在坡道上卡住，所以不開）
 const balls = []; // {body, mesh}
 const ballShape = new CANNON.Sphere(0.36);
 const ballGeo = new THREE.SphereGeometry(0.36, 28, 20);
@@ -331,9 +408,9 @@ const ballGeo = new THREE.SphereGeometry(0.36, 28, 20);
 // 金幣有兩種狀態：
 //  free：真實圓柱剛體（可滾動、翻轉），用於出幣口滾出與天降金幣
 //  flat：平躺方塊剛體（鎖定旋轉），落定後切換，讓大量金幣堆疊時效能穩定；到前緣時再解鎖翻落
-const coinCyl = new CANNON.Cylinder(COIN_R, COIN_R, COIN_H, 12);
+const coinCyl = new CANNON.Cylinder(COIN_R, COIN_R, COIN_H, 12); coinCyl.material = matCoin;
 let freeCount = 0;
-const FREE_MAX = 130;
+const SLEEP_V = 0.2, SLEEP_T = 0.3; // 落定的金幣更快進入睡眠
 function onCoinCollide(e) {
   const v = Math.abs(e.contact.getImpactVelocityAlongNormal());
   if (v < 0.8) return;
@@ -343,24 +420,24 @@ function makeCoinBody(x, y, z, vx = 0, vy = 0, vz = 0) {
   const b = new CANNON.Body({ mass: 1, material: matCoin, shape: coinShape, linearDamping: 0.08, angularDamping: 0.35 });
   b.position.set(x, y, z); b.velocity.set(vx, vy, vz);
   b.fixedRotation = true; b.quaternion.setFromEuler(0, rand(0, Math.PI), 0); b.updateMassProperties();
-  b.allowSleep = true; b.sleepSpeedLimit = 0.12; b.sleepTimeLimit = 0.4;
+  b.allowSleep = true; b.sleepSpeedLimit = SLEEP_V; b.sleepTimeLimit = SLEEP_T;
   world.addBody(b); return b;
 }
-function makeFreeCoinBody(x, y, z, q, v, w) {
-  const b = new CANNON.Body({ mass: 1, material: matCoin, shape: coinCyl, linearDamping: 0.04, angularDamping: 0.08 });
+// 倒入的金幣用可自由翻轉的薄方塊（碰撞計算比 12 邊圓柱便宜很多，外觀仍是圓柱）；出幣口立著滾的金幣才用圓柱
+const coinTumble = new CANNON.Box(new CANNON.Vec3(0.215, COIN_H / 2, 0.215));
+function makeFreeCoinBody(x, y, z, q, v, w, roll = false) {
+  const b = new CANNON.Body({ mass: 1, material: matCoin, shape: roll ? coinCyl : coinTumble, linearDamping: 0.04, angularDamping: 0.08 });
   b.position.set(x, y, z); b.quaternion.copy(q); b.velocity.copy(v); b.angularVelocity.copy(w);
   b.allowSleep = false;
   b.addEventListener('collide', onCoinCollide);
   world.addBody(b); freeCount++; return b;
 }
 function addCoin(x, y, z, vx, vy, vz) {
-  if (coins.length >= MAX_COINS) return false;
-  coins.push({ body: makeCoinBody(x, y, z, vx, vy, vz), born: simTime, free: false });
+  coins.push({ body: makeCoinBody(x, y, z, vx, vy, vz), born: simTime, free: false, dirty: true });
   return true;
 }
-function addFreeCoin(x, y, z, q, v, w, hardCap = MAX_COINS) {
-  if (coins.length >= hardCap || freeCount >= FREE_MAX) return false;
-  coins.push({ body: makeFreeCoinBody(x, y, z, q, v, w), born: simTime, free: true });
+function addFreeCoin(x, y, z, q, v, w, roll = false) {
+  coins.push({ body: makeFreeCoinBody(x, y, z, q, v, w, roll), born: simTime, free: true, dirty: true });
   return true;
 }
 const _up = new CANNON.Vec3(), _ax = new CANNON.Vec3(), _X1 = new CANNON.Vec3(1, 0, 0), _Y1 = new CANNON.Vec3(0, 1, 0);
@@ -374,7 +451,7 @@ function settleCoin(c) {
   b.quaternion.setFromEuler(0, yaw, 0);
   b.angularVelocity.set(0, 0, 0);
   b.fixedRotation = true; b.updateMassProperties();
-  b.allowSleep = true; b.sleepSpeedLimit = 0.12; b.sleepTimeLimit = 0.4;
+  b.allowSleep = true; b.sleepSpeedLimit = SLEEP_V; b.sleepTimeLimit = SLEEP_T;
   c.free = false; freeCount--;
 }
 function updateFreeCoins(t) {
@@ -382,21 +459,24 @@ function updateFreeCoins(t) {
     if (!c.free) continue;
     const b = c.body, age = t - c.born;
     // 斜坡上絕不停留：速度太低就沿坡道推一下
-    if (b.position.x < RAMP_DEF.x1 + 0.05 && b.position.y > 0.95) {
+    if (b.position.x < RAMP_DEF.x1 + (c.edge ? 0.32 : 0.05) && b.position.y > 0.95) {
       if (b.velocity.x * RAMP.dir.x + b.velocity.y * RAMP.dir.y < 3.3) { b.velocity.x += RAMP.dir.x * 0.3; b.velocity.y += RAMP.dir.y * 0.3; }
       if (!c.edge) continue;
     }
     if (c.edge) {
       const roll = Math.abs(b.angularVelocity.z) * COIN_R;
-      const off = b.position.x > RAMP_DEF.x1 + 0.05 || b.position.y < 0.95;
-      if (b.position.x > RAMP_DEF.x1 + 1.8 || age > 2.0 || (off && (roll < 0.9 || b.velocity.length() < 0.9))) {
+      // 完全離開坡道末端（含兩側擋板與中間分隔）後才放開旋轉，避免在坡道上倒下卡在擋板上
+      const off = b.position.x > RAMP_DEF.x1 + 0.32 || b.position.y < 0.95;
+      if (b.position.x > RAMP_DEF.x1 + 1.8 || (off && (age > 2.0 || roll < 0.9 || b.velocity.length() < 0.9))) {
         c.edge = false; b.angularFactor.set(1, 1, 1); b.angularVelocity.x += rand(-2.5, 2.5);
       } else continue;
     }
     b.quaternion.vmult(_Y1, _up);
     const flat = Math.abs(_up.y) > 0.94;
     const sp = b.velocity.length() + b.angularVelocity.length() * 0.25;
-    if ((age > 0.8 && flat && sp < 0.45 && b.position.y < 1.6) || (age > 2.5 && sp < 1.5 && b.position.y < 2 && Math.abs(_up.y) > 0.6) || age > 6) settleCoin(c);
+    // 倒入的金幣一碰到金幣堆、接近平躺就轉成平躺圓盤（便宜的解析碰撞）；立著滾的出幣口金幣維持較嚴格條件
+    const quick = !c.roll && age > 0.5 && Math.abs(_up.y) > 0.9 && sp < 0.9 && b.velocity.y > -1.0 && b.position.y < 1.8;
+    if (quick || (age > 0.45 && flat && sp < 0.7 && b.position.y < 1.6) || (age > 1.5 && sp < 1.8 && b.position.y < 2 && Math.abs(_up.y) > 0.5) || age > 3) settleCoin(c);
   }
 }
 function addBall(x, y, z, vx = 0, vy = 0, vz = 0) {
@@ -412,16 +492,16 @@ function spawnChuteCoin() {
   const sp = rand(3.3, 3.7);
   const p = RAMP.top.clone().addScaledVector(RAMP.normal, COIN_R + 0.03);
   // 出幣口前方還有金幣就先等一下，避免新金幣和前一枚重疊而被彈出斜坡
-  const lane = chuteLane ^ 1, lz = RAMP.z + (lane ? 0.12 : -0.12); // 兩條滾道輪流出幣
-  for (const c of coins) { const q = c.body.position; if (Math.abs(q.z - lz) < 0.1 && (q.x - p.x) ** 2 + (q.y - p.y) ** 2 < 0.53 * 0.53) return false; }
+  const lane = chuteLane ^ 1, lz = RAMP.z + (lane ? 0.1 : -0.1); // 兩條滾道輪流出幣
+  for (const c of coins) { const q = c.body.position; if (Math.abs(q.z - lz) < 0.09 && (q.x - p.x) ** 2 + (q.y - p.y) ** 2 < 0.53 * 0.53) return false; }
   chuteLane = lane;
   const q = new CANNON.Quaternion().setFromEuler(Math.PI / 2, 0, rand(-0.05, 0.05)); // 軸向朝 z → 立起來
   const v = new CANNON.Vec3(RAMP.dir.x * sp, RAMP.dir.y * sp, 0);
   const w = new CANNON.Vec3(rand(-0.3, 0.3), 0, -sp / COIN_R);
-  const ok = addFreeCoin(p.x, p.y, lz + rand(-0.01, 0.01), q, v, w, HARD_CAP);
+  const ok = addFreeCoin(p.x, p.y, lz + rand(-0.01, 0.01), q, v, w, true);
   if (ok) {
     // 立著滾：只允許繞 z 軸（硬幣自身的軸）旋轉，滾出坡底一段距離後才放開讓它自然倒下
-    const c = coins[coins.length - 1]; c.edge = true; c.body.angularFactor.set(0, 0, 1);
+    const c = coins[coins.length - 1]; c.edge = true; c.roll = true; c.body.angularFactor.set(0, 0, 1);
     sfx.roll();
   }
   return ok;
@@ -447,12 +527,12 @@ for (const sp of SPOUTS) {
 // 一口氣倒出：每一波在整個出口寬度上同時噴出一團金幣（4 列 × 3 排）
 function spawnPourBurst(sp, maxN) {
   let n = 0;
-  for (let j = 0; j < 3 && n < maxN; j++) for (let i = 0; i < 4 && n < maxN; i++) {
+  for (let k = 0; n < maxN; k++) for (let j = 0; j < 3 && n < maxN; j++) for (let i = 0; i < 4 && n < maxN; i++) {
     const q = new CANNON.Quaternion().setFromEuler(rand(-0.8, 0.8), rand(0, Math.PI * 2), Math.PI / 2 * sp.sx + rand(-0.7, 0.7));
     const v = new CANNON.Vec3(-sp.sx * rand(1.8, 3.6) - sp.sx * j * 0.4, rand(-0.6, 0.8), rand(-0.6, 0.6) + (i - 1.5) * 0.25);
     const w = new CANNON.Vec3(rand(-9, 9), rand(-4, 4), rand(-11, 11));
-    const x = sp.x - sp.sx * j * 0.55 + rand(-0.03, 0.03), y = sp.y + (j % 2) * 0.12 + rand(-0.03, 0.03), z = sp.z + (i - 1.5) * 0.55 + rand(-0.04, 0.04);
-    if (!addFreeCoin(x, y, z, q, v, w, HARD_CAP)) return n;
+    const x = sp.x - sp.sx * j * 0.55 + rand(-0.03, 0.03), y = sp.y + (j % 2) * 0.12 + k * 0.16 + rand(-0.03, 0.03), z = sp.z + (i - 1.5) * 0.55 + rand(-0.04, 0.04);
+    if (!addFreeCoin(x, y, z, q, v, w)) return n;
     n++;
   }
   return n;
@@ -842,8 +922,8 @@ function addPrizeCoins(n, src) {
   if (n <= 0) return;
   S.totalWon += n;
   S.pendingCoins += n;
-  if (S.pendingCoins > 500) { // 超過 500 的部分一次從上方落下
-    const excess = S.pendingCoins - 500; S.pendingCoins = 500; S.dumpCoins += excess;
+  if (S.pendingCoins > 20) { // 超過 20 的部分立刻從兩側倒幣口一口氣倒入（不排隊）
+    const excess = S.pendingCoins - 20; S.pendingCoins = 20; S.dumpCoins += excess;
     toast(`大量金幣 ${excess} 枚從兩側倒入！`);
   }
   updateHUD();
@@ -860,7 +940,7 @@ function updateDispense(dt) {
     for (const sp of SPOUTS) {
       sp.timer -= dt;
       if (sp.timer <= 0 && S.dumpCoins > 0) {
-        const n = spawnPourBurst(sp, Math.min(12, S.dumpCoins)); S.dumpCoins -= n;
+        const n = spawnPourBurst(sp, Math.min(Math.max(12, Math.ceil(S.dumpCoins / 6)), 48, S.dumpCoins)); S.dumpCoins -= n;
         sp.timer = n ? 0.36 : 0.15; if (n >= 4) sfx.pour(sp.sx, n);
       }
     }
@@ -868,30 +948,75 @@ function updateDispense(dt) {
 }
 
 // ====================== 彩券 ======================
-let printQueue = 0, printTimer = 0, stripLen = 0;
+// 仿真實機台兌換彩券：奶油色紙張＋紅橘印刷、每張之間有虛線撕孔、兩側半圓打孔缺口，
+// 以 canvas 畫一張彩券貼圖（只畫一次），連續紙帶用重複背景；出票時紙帶從出票口往下送，
+// 太長就撕下來折疊掉到旁邊的彩券堆。
+const TK_W = 74, TK_H = 30;
+function makeTicketTile() {
+  const k = 2, c = document.createElement('canvas'); c.width = TK_W * k; c.height = TK_H * k;
+  const g = c.getContext('2d'); g.scale(k, k);
+  g.fillStyle = '#f4e7c5'; g.fillRect(0, 0, TK_W, TK_H); // 奶油色紙
+  for (let i = 0; i < 260; i++) { g.fillStyle = `rgba(${Math.random() < 0.5 ? '120,90,40' : '255,255,255'},${Math.random() * 0.08})`; g.fillRect(Math.random() * TK_W, Math.random() * TK_H, 1, 1); } // 紙纖維
+  g.strokeStyle = '#c8321e'; g.lineWidth = 1.2; g.strokeRect(5, 3.5, TK_W - 10, TK_H - 7); // 紅橘外框
+  g.fillStyle = '#c8321e'; g.fillRect(5, 3.5, 15, TK_H - 7); // 左側色塊
+  g.fillStyle = '#ffc000'; g.font = '700 13px "Barlow Condensed",sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('1', 12.5, TK_H / 2 + 0.5);
+  g.fillStyle = '#1a1a1a'; g.font = '700 7.5px "Noto Sans TC",sans-serif'; g.fillText('幸運推金幣', 44, 10.5);
+  g.fillStyle = '#c8321e'; g.font = '700 9px "Barlow Condensed",sans-serif'; g.fillText('1 TICKET', 44, 20.5);
+  g.fillStyle = 'rgba(0,0,0,.28)'; for (let x = 1; x < TK_W; x += 3) g.fillRect(x, TK_H - 0.6, 1.4, 1.2); // 撕孔虛線（跨在兩張之間）
+  g.globalCompositeOperation = 'destination-out'; // 兩側半圓打孔缺口（在撕孔線上）
+  for (const y of [0, TK_H]) for (const x of [0, TK_W]) { g.beginPath(); g.arc(x, y, 3, 0, Math.PI * 2); g.fill(); }
+  g.beginPath(); g.arc(TK_W / 2, TK_H - 0.2, 1.3, 0, Math.PI * 2); g.fill(); // 中間小孔
+  return c.toDataURL();
+}
+const setTicketTile = () => document.documentElement.style.setProperty('--ticket', `url(${makeTicketTile()})`);
+setTicketTile(); if (document.fonts) document.fonts.ready.then(setTicketTile); // 字型載入後重畫一次
+let printQueue = 0, printTimer = 0, stripTarget = 0, stripCur = 0, stripShown = -1, printLamp = false;
+let pileCount = 0, pileLayers = -1;
+const stripEl = $('ticketStrip'), pileCv = $('ticketPile'), slotEl = document.querySelector('.tmSlot');
 function addTickets(n, x, y) {
   S.tickets += n; printQueue += n;
   if (x !== undefined) popup(`+${n} 彩券`, x, y, 'ticket');
+}
+// 彩券堆：側面看的 Z 字折疊紙堆，張數越多越高（只有層數變化時才重畫）
+function drawPile() {
+  const layers = pileCount ? Math.min(16, Math.ceil(Math.log2(1 + pileCount) * 1.7)) : 0;
+  if (layers === pileLayers) return; pileLayers = layers;
+  const k = 2, W = 44, H = 46; if (pileCv.width !== W * k) { pileCv.width = W * k; pileCv.height = H * k; }
+  const g = pileCv.getContext('2d'); g.setTransform(k, 0, 0, k, 0, 0); g.clearRect(0, 0, W, H);
+  for (let i = 0; i < layers; i++) {
+    const y = H - 3 - i * 2.6, off = (i % 2 ? 1.5 : -1.5) + Math.sin(i * 1.7) * 1.2;
+    g.fillStyle = i % 2 ? '#e9d9b2' : '#f4e7c5'; g.fillRect(5 + off, y - 2.2, W - 10, 2.4);
+    g.fillStyle = '#c8321e'; g.fillRect(5 + off, y - 2.2, 3, 2.4); g.fillRect(W - 8 + off, y - 2.2, 3, 2.4);
+    g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(5 + off, y + 0.2, W - 10, 0.5);
+    g.beginPath(); g.fillStyle = i % 2 ? '#f4e7c5' : '#e9d9b2'; // 折疊處的圓弧
+    const fx = i % 2 ? W - 5 + off : 5 + off; g.arc(fx, y - 1, 1.3, 0, Math.PI * 2); g.fill();
+  }
+}
+function tearStrip(n) {
+  const t = document.createElement('div'); t.className = 'torn';
+  t.style.height = n * TK_H + 'px'; t.style.top = (35 + stripCur - n * TK_H) + 'px';
+  $('ticketMachine').appendChild(t);
+  requestAnimationFrame(() => { t.classList.add('fall'); });
+  setTimeout(() => { t.remove(); pileCount += n; drawPile(); }, 650);
+  stripTarget -= n * TK_H; stripCur -= n * TK_H;
 }
 function updateTickets(dt) {
   printTimer -= dt;
   const rate = printQueue > 60 ? 0.012 : printQueue > 15 ? 0.03 : 0.07;
   let printed = 0;
-  while (printQueue > 0 && printTimer <= 0) { printQueue--; printTimer += rate; printed++; stripLen += 12; }
+  while (printQueue > 0 && printTimer <= 0) { printQueue--; printTimer += rate; printed++; stripTarget += TK_H; }
   if (printQueue <= 0 && printTimer < 0) printTimer = 0;
   if (printed) { sfx.ticket(); }
-  const strip = $('ticketStrip');
-  if (stripLen > 60) {
-    const torn = document.createElement('div'); torn.className = 'torn';
-    torn.style.height = stripLen + 'px'; torn.style.left = '43px'; torn.style.top = '35px';
-    $('ticketMachine').appendChild(torn);
-    requestAnimationFrame(() => { torn.style.transform = `translate(${rand(-60, 60)}px, 160px) rotate(${rand(-40, 40)}deg)`; torn.style.opacity = '0'; });
-    setTimeout(() => torn.remove(), 1100);
-    stripLen = 0;
-  }
-  strip.style.height = stripLen + 'px';
+  // 紙帶平滑送出（出票越快送越快）
+  if (stripCur < stripTarget) stripCur = Math.min(stripTarget, stripCur + dt * Math.max(140, TK_H / rate * 1.2));
+  // 垂下超過 3 張就撕下（保留最新的 1 張）
+  if (stripCur >= stripTarget && stripTarget >= TK_H * 4) tearStrip(Math.floor(stripTarget / TK_H) - 1);
+  else if (stripTarget > TK_H * 9) tearStrip(Math.floor(stripCur / TK_H) - 1); // 大量出票時邊送邊撕
+  const h = Math.round(stripCur);
+  if (h !== stripShown) { stripShown = h; stripEl.style.height = h + 'px'; }
+  const busy = stripCur < stripTarget || printQueue > 0;
+  if (busy !== printLamp) { printLamp = busy; slotEl.classList.toggle('printing', busy); }
 }
-
 // ====================== 金蛋 ======================
 function flyEgg(x, y) {
   const el = document.createElement('div'); el.className = 'flyEgg';
@@ -1151,18 +1276,22 @@ const dummy = new THREE.Object3D();
 // 於是慢慢壓進金幣裡，之後金幣就卡在推板體積內「穿透」。每一步：叫醒推板前緣附近的金幣，
 // 並把任何已經陷進推板體積的金幣移到推板前方（靠近前緣）或推板頂面（陷得很深）。
 let pusherFixes = 0;
+let awakeEst = 0;
 function guardPusher(pf) {
   const top = POOL.pusherH, back = pf - POOL.pusherHalfD * 2, v = pusherVel(simTime);
+  let aw = 0;
   for (const c of coins) {
     const b = c.body, p = b.position;
+    if (b.sleepState === 0) aw++;
     if (c.spill || p.y > top + 0.2) continue;
-    if (b.sleepState !== 0 && ((p.z > pf - 0.7 && p.z < pf + 0.55) || (v > 0.15 && p.z > pf))) b.wakeUp(); // 推板前進時喚醒前方金幣，讓推力能真實傳遞到整片金幣
+    if (b.sleepState !== 0 && ((p.z > pf - 0.7 && p.z < pf + 0.55) || (v > 0.15 && p.z > pf && p.y < 0.2))) b.wakeUp(); // 推板前進時喚醒前方底層金幣（上層靠接觸連鎖喚醒），讓推力真實傳遞
     if (p.y < top - 0.015 && p.z < pf + 0.02 && p.z > back - 0.3 && Math.abs(p.x) < POOL.xHalf + 0.05) {
       if (pf - p.z < 0.6) { p.z = pf + 0.3; if (b.velocity.z < v) b.velocity.z = Math.max(v, 0); }
       else { p.y = top + 0.07; b.velocity.y = 0; }
       b.wakeUp(); pusherFixes++;
     }
   }
+  awakeEst = aw;
 }
 function stepPhysics(dt) {
   acc += Math.min(dt, 0.1); let n = 0;
@@ -1171,6 +1300,7 @@ function stepPhysics(dt) {
     pusherBody.position.set(0, POOL.pusherH / 2, pz);
     pusherBody.velocity.set(0, 0, pusherVel(simTime));
     guardPusher(pz + POOL.pusherHalfD);
+    world.solver.iterations = awakeEst > 600 ? 4 : 5; // 大量金幣同時在動時少做一次迭代
     const _t0 = performance.now(); world.step(FIXED); physMs = physMs * 0.95 + (performance.now() - _t0) * 0.05;
     simTime += FIXED; acc -= FIXED; n++;
   }
@@ -1183,8 +1313,8 @@ function syncPool() {
   for (const c of coins) {
     if (c.edge || c.spill) continue;
     const b = c.body, p = b.position;
-    if (p.y > 0.95 && p.x < RAMP_DEF.x1 + 0.9 && Math.abs(p.z - RAMP_DEF.z) < 0.8) {
-      b.wakeUp(); if (b.velocity.x < 0.8) b.velocity.x += 0.2;
+    if (p.y > POOL.pusherH + 0.1 && p.x < RAMP_DEF.x1 + 1.1 && Math.abs(p.z - RAMP_DEF.z) < 0.8) {
+      b.wakeUp(); if (b.velocity.x < 1.2) b.velocity.x += 0.25;
     }
   }
   for (let i = coins.length - 1; i >= 0; i--) {
@@ -1194,16 +1324,21 @@ function syncPool() {
     if (p.y < -1.0 || Math.abs(p.x) > POOL.xHalf + 1 || p.z > POOL.front + 2.5) {
       if (p.z > POOL.front - 0.3) { const s = toScreen(new THREE.Vector3(p.x, 0, POOL.front), poolCam); addTickets(1, s.x, s.y); sfx.hole(); }
       if (coins[i].free) { freeCount--; b.removeEventListener('collide', onCoinCollide); }
-      world.removeBody(b); coins[i] = coins[coins.length - 1]; coins.pop();
+      world.removeBody(b); coins[i] = coins[coins.length - 1]; coins[i].dirty = true; coins.pop();
     }
   }
+  ensureCoinCap(coins.length);
+  let upd = 0;
   for (let i = 0; i < coins.length; i++) {
-    const b = coins[i].body;
+    const c = coins[i], b = c.body;
+    // 睡眠中的金幣位置不變：只更新移動中或索引剛變動的金幣
+    if (b.sleepState === 2 && !c.dirty) continue;
+    c.dirty = false; upd++;
     dummy.position.set(b.position.x, b.position.y, b.position.z);
     dummy.quaternion.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w);
     dummy.updateMatrix(); coinMesh.setMatrixAt(i, dummy.matrix);
   }
-  coinMesh.count = coins.length; coinMesh.instanceMatrix.needsUpdate = true;
+  coinMesh.count = coins.length; if (upd) coinMesh.instanceMatrix.needsUpdate = true;
   for (let i = balls.length - 1; i >= 0; i--) {
     const { body: b, mesh } = balls[i];
     if (b.position.y < -1.0 || Math.abs(b.position.x) > POOL.xHalf + 1) {
@@ -1274,7 +1409,10 @@ if (DEBUG) {
   $('debugPanel').addEventListener('click', (e) => { const d = e.target.dataset.d; if (d) debugAction(d); });
 }
 window.__game = {
-  S, debugAction, coins, balls, items, wheel, sparkPts, sparks,
+  S, debugAction, coins, balls, items, wheel, sparkPts, sparks, world,
+  addCoins(n) { addPrizeCoins(n, 'debug'); },
+  addTk(n) { addTickets(n); },
+  awake: () => coins.reduce((a, c) => a + (c.body.sleepState === 0 ? 1 : 0), 0),
   ff(sec) { for (let i = 0; i < sec * 60; i++) { stepPhysics(FIXED); updateFreeCoins(simTime); syncPool(); updateDispense(FIXED); } },
   shootAt(nx, ny, c = 0.5) { mouse.set(nx, ny); fire(c); },
   itemScreen(i) { const it = items[i]; const v = new THREE.Vector3(); it.model.getWorldPosition(v); return { ...toScreen(v), row: it.rowIdx, value: it.value, state: it.state }; },
