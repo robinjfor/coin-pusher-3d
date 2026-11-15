@@ -278,7 +278,7 @@ function Darts(finish) {
       dartsLeft--; fly = { x0: x + 40, y0: H + 40, x, y, t: 0 }; state = 'fly'; sfx.whoosh();
     },
     update(dt) {
-      t += dt; speed = (2.9 + Math.sin(t * 0.9) * 1.4) * spdMul; rot += speed * dt; // 約為原本 1.8 倍
+      t += dt; speed = (4.64 + Math.sin(t * 0.9) * 2.24) * spdMul; rot += speed * dt; // 再加快約 1.6 倍
       for (const s of segs) s.flash = Math.max(0, s.flash - dt * 1.2);
       if (state === 'fly') { fly.t += dt / 0.28; if (fly.t >= 1) { const f = fly; fly = null; impact(f.x, f.y); } }
       else if (state === 'wait') { timer -= dt; if (timer <= 0) { emptyTwo(); state = 'aim'; } }
@@ -345,7 +345,7 @@ function Hats(finish) {
     { c: 2, r: 1, p: 200 }, { c: 2, r: 1, p: 500 }, { c: 1, r: 2, p: 1000 },
     { c: 1, r: 2, p: 1500 }, { c: 2, r: 2, p: 2000 }, { c: 1, r: 3, p: 2500 },
   ];
-  setTitle('魔術帽', '記住金幣的位置！選中金幣即可晉級，選到兔子只能拿上一局的獎金');
+  setTitle('魔術帽', '金幣隨機藏在帽子裡，憑直覺選一頂！選中金幣即可晉級，選到兔子只能拿上一局的獎金');
   let round = 0, lastWon = 0, hats = [], phase = 'show', timer = 0, swap = null, swapsLeft = 0, chosen = -1, hover = -1, revealAll = 0;
   const TABLE_Y = 560;
   function slotX(i, n) { const sp = n === 3 ? 180 : 138; return W / 2 + (i - (n - 1) / 2) * sp; }
@@ -353,10 +353,10 @@ function Hats(finish) {
     const cfg = ROUNDS[round]; const n = cfg.c + cfg.r;
     const contents = [...Array(cfg.c).fill('coin'), ...Array(cfg.r).fill('rabbit')];
     for (let i = contents.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [contents[i], contents[j]] = [contents[j], contents[i]]; }
-    hats = contents.map((c, i) => ({ content: c, slot: i, x: slotX(i, n), y: TABLE_Y, lift: 1, dy: 0 }));
-    phase = 'show'; timer = 1.8; chosen = -1; revealAll = 0;
-    swapsLeft = 5 + round * 2;
-    setSub(`第 ${round + 1} 局：${cfg.c} 疊金幣、${cfg.r} 隻兔子 — 猜中可得 ${cfg.p} 金幣`);
+    // 不再展示與洗牌：金幣直接隨機藏好，玩家直接選
+    hats = contents.map((c, i) => ({ content: c, slot: i, x: slotX(i, n), y: TABLE_Y, lift: 0, dy: 0 }));
+    phase = 'pick'; timer = 0; chosen = -1; revealAll = 0;
+    setSub(`第 ${round + 1} 局：${cfg.c} 疊金幣、${cfg.r} 隻兔子藏在帽子裡 — 選一頂！猜中可得 ${cfg.p} 金幣`);
     buttons([]);
   }
   const swapDur = () => Math.max(0.2, 0.5 - round * 0.05);

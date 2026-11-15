@@ -107,7 +107,8 @@ function canvasTex(w, h, draw) {
 }
 // 金幣：金色 PBR + 浮雕（bumpMap）：凸起外圈、六角形徽記、齒邊
 function hexPath(g, cx, cy, r, rot = Math.PI / 6) { g.beginPath(); for (let i = 0; i < 6; i++) { const a = rot + i * Math.PI / 3; g[i ? 'lineTo' : 'moveTo'](cx + Math.cos(a) * r, cy + Math.sin(a) * r); } g.closePath(); }
-const coinFaceTex = canvasTex(256, 256, (g, w, h) => {
+const coinFaceTex = canvasTex(128, 128, (g, w, h) => {
+  g.scale(w / 256, h / 256); w = h = 256; // 低解析度貼圖（座標仍以 256 設計）
   const gr = g.createRadialGradient(100, 90, 10, 128, 128, 140);
   gr.addColorStop(0, '#fff6cf'); gr.addColorStop(0.55, '#ffd25a'); gr.addColorStop(1, '#e0a92a');
   g.fillStyle = gr; g.fillRect(0, 0, w, h);
@@ -115,24 +116,11 @@ const coinFaceTex = canvasTex(256, 256, (g, w, h) => {
   hexPath(g, 128, 128, 62); g.strokeStyle = 'rgba(110,62,0,.6)'; g.lineWidth = 6; g.stroke();
   g.fillStyle = 'rgba(110,62,0,.55)'; g.font = '700 74px "Barlow Condensed","Noto Sans TC",sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('$', 128, 132);
 });
-const coinBumpTex = (() => {
-  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
-  g.fillStyle = '#7a7a7a'; g.fillRect(0, 0, 256, 256);
-  g.fillStyle = '#ffffff'; g.beginPath(); g.arc(128, 128, 126, 0, 7); g.arc(128, 128, 106, 0, 7, true); g.fill(); // 凸起外圈
-  for (let i = 0; i < 48; i++) { const a = i / 48 * Math.PI * 2; g.fillStyle = '#bdbdbd'; g.beginPath(); g.arc(128 + Math.cos(a) * 98, 128 + Math.sin(a) * 98, 2.4, 0, 7); g.fill(); } // 珠圈
-  hexPath(g, 128, 128, 64); g.strokeStyle = '#ffffff'; g.lineWidth = 9; g.stroke();
-  g.fillStyle = '#ffffff'; g.font = '700 74px "Barlow Condensed","Noto Sans TC",sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('$', 128, 132);
-  return new THREE.CanvasTexture(c);
-})();
-const coinEdgeTex = (() => { // 齒邊
-  const c = document.createElement('canvas'); c.width = 256; c.height = 16; const g = c.getContext('2d');
-  for (let i = 0; i < 64; i++) { g.fillStyle = i % 2 ? '#404040' : '#ffffff'; g.fillRect(i * 4, 0, 4, 16); }
-  const t = new THREE.CanvasTexture(c); t.wrapS = THREE.RepeatWrapping; t.repeat.set(2, 1); return t;
-})();
 const M = {
   gold: new THREE.MeshStandardMaterial({ color: 0xffc23a, metalness: 1, roughness: 0.26 }),
-  coinEdge: new THREE.MeshStandardMaterial({ color: 0xffcc48, metalness: 1, roughness: 0.22, envMapIntensity: 1.8, bumpMap: coinEdgeTex, bumpScale: 1.2 }),
-  coinFace: new THREE.MeshStandardMaterial({ color: 0xffffff, map: coinFaceTex, bumpMap: coinBumpTex, bumpScale: 2.0, metalness: 1, roughness: 0.2, envMapIntensity: 1.9 }),
+  // 金幣：粗糙一點、不做凹凸貼圖（比較不精細也比較省）
+  coinEdge: new THREE.MeshStandardMaterial({ color: 0xe8b23a, metalness: 1, roughness: 0.42, envMapIntensity: 1.5 }),
+  coinFace: new THREE.MeshStandardMaterial({ color: 0xffffff, map: coinFaceTex, metalness: 1, roughness: 0.38, envMapIntensity: 1.6 }),
   chrome: new THREE.MeshStandardMaterial({ color: 0xd8dade, metalness: 1, roughness: 0.14 }),
   red: new THREE.MeshPhysicalMaterial({ color: 0xd0081e, metalness: 0.1, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.04 }),
   lacquer: new THREE.MeshPhysicalMaterial({ color: 0x050505, metalness: 0.2, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.06 }),
@@ -223,6 +211,18 @@ const POOL = { xHalf: 4.2, front: 4.0, back: -7, wallZ: -2.0, pusherHalfD: 2.2, 
 const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -14, 0.45) });
 world.broadphase = new CANNON.SAPBroadphase(world);
 world.allowSleep = true;
+// cannon 預設的碰撞矩陣是 n² 陣列（1500 枚金幣 ≈ 110 萬格），每步清零、每次加/移除剛體都重新配置；
+// 改用只記錄實際接觸配對的稀疏集合。另外關掉沒用到的 begin/endContact 追蹤（它用線性插入排序，接觸一多就很慢）。
+class SparseCollisionMatrix {
+  constructor() { this.s = new Set(); }
+  key(bi, bj) { const a = bi.id, b = bj.id; return a < b ? a * 1048576 + b : b * 1048576 + a; }
+  get(bi, bj) { return this.s.has(this.key(bi, bj)); }
+  set(bi, bj, v) { const k = this.key(bi, bj); if (v) this.s.add(k); else this.s.delete(k); }
+  reset() { this.s.clear(); }
+  setNumObjects() {}
+}
+world.collisionMatrix = new SparseCollisionMatrix(); world.collisionMatrixPrevious = new SparseCollisionMatrix();
+for (const ok of [world.bodyOverlapKeeper, world.shapeOverlapKeeper]) { ok.set = () => {}; ok.tick = () => {}; ok.getDiff = () => {}; }
 world.solver.iterations = 5;
 const matCoin = new CANNON.Material('coin'), matStatic = new CANNON.Material('static'), matPusher = new CANNON.Material('pusher');
 world.addContactMaterial(new CANNON.ContactMaterial(matCoin, matCoin, { friction: 0.07, restitution: 0.05 }));
@@ -282,11 +282,12 @@ const pusherMesh = new THREE.Group();
 
 // 金幣（InstancedMesh）
 const COIN_R = 0.256, COIN_H = 0.072; // 縮小約 20%
-const coinGeo = new THREE.CylinderGeometry(COIN_R, COIN_R, COIN_H, LITE ? 18 : 26);
+const coinGeo = new THREE.CylinderGeometry(COIN_R, COIN_R, COIN_H, LITE ? 10 : 12); // 低面數（粗糙一點）
+{ const gs = coinGeo.groups; if (gs.length === 3 && gs[1].start + gs[1].count === gs[2].start) { gs[1].count += gs[2].count; gs.length = 2; } } // 上下兩面合成一個 draw call
 let coinMesh = makeCoinMesh(COIN_CAP0);
 function makeCoinMesh(cap) {
   const m = new THREE.InstancedMesh(coinGeo, [M.coinEdge, M.coinFace, M.coinFace], cap);
-  m.castShadow = true; m.receiveShadow = true; m.count = 0;
+  m.castShadow = !LITE; m.receiveShadow = true; m.count = 0; // 手機上金幣不投射陰影（陰影 pass 不用再畫上千枚金幣）
   m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.frustumCulled = false;
   m.layers.set(2); scene.add(m); return m;
 }
@@ -420,7 +421,7 @@ function makeCoinBody(x, y, z, vx = 0, vy = 0, vz = 0) {
   const b = new CANNON.Body({ mass: 1, material: matCoin, shape: coinShape, linearDamping: 0.08, angularDamping: 0.35 });
   b.position.set(x, y, z); b.velocity.set(vx, vy, vz);
   b.fixedRotation = true; b.quaternion.setFromEuler(0, rand(0, Math.PI), 0); b.updateMassProperties();
-  b.allowSleep = true; b.sleepSpeedLimit = SLEEP_V; b.sleepTimeLimit = SLEEP_T;
+  b.allowSleep = true; b.sleepSpeedLimit = TUNE.sv || SLEEP_V; b.sleepTimeLimit = TUNE.st || SLEEP_T;
   world.addBody(b); return b;
 }
 // 倒入的金幣用可自由翻轉的薄方塊（碰撞計算比 12 邊圓柱便宜很多，外觀仍是圓柱）；出幣口立著滾的金幣才用圓柱
@@ -438,6 +439,8 @@ function addCoin(x, y, z, vx, vy, vz) {
 }
 function addFreeCoin(x, y, z, q, v, w, roll = false) {
   coins.push({ body: makeFreeCoinBody(x, y, z, q, v, w, roll), born: simTime, free: true, dirty: true });
+  // 倒入中的金幣彼此先不碰撞（只碰檯面和已落定的金幣），省下一大團金幣在空中互相計算的成本
+  if (!roll && !TUNE.noAir) { const b = coins[coins.length - 1].body; b.collisionFilterGroup = 2; b.collisionFilterMask = 1; }
   return true;
 }
 const _up = new CANNON.Vec3(), _ax = new CANNON.Vec3(), _X1 = new CANNON.Vec3(1, 0, 0), _Y1 = new CANNON.Vec3(0, 1, 0);
@@ -445,19 +448,25 @@ const _up = new CANNON.Vec3(), _ax = new CANNON.Vec3(), _X1 = new CANNON.Vec3(1,
 function settleCoin(c) {
   const b = c.body;
   b.removeEventListener('collide', onCoinCollide);
+  b.collisionFilterGroup = 1; b.collisionFilterMask = -1;
   b.quaternion.vmult(_X1, _ax);
   const yaw = Math.atan2(-_ax.z, _ax.x);
-  b.removeShape(b.shapes[0]); b.addShape(coinShape);
+  while (b.shapes.length) b.removeShape(b.shapes[0]);
+  b.addShape(coinShape);
   b.quaternion.setFromEuler(0, yaw, 0);
   b.angularVelocity.set(0, 0, 0);
   b.fixedRotation = true; b.updateMassProperties();
-  b.allowSleep = true; b.sleepSpeedLimit = SLEEP_V; b.sleepTimeLimit = SLEEP_T;
+  b.allowSleep = true; b.sleepSpeedLimit = TUNE.sv || SLEEP_V; b.sleepTimeLimit = TUNE.st || SLEEP_T;
   c.free = false; freeCount--;
 }
+let fastFree = 0; // 速度快的自由金幣數（有的話物理維持 1/60 秒小步，避免穿透）
 function updateFreeCoins(t) {
+  let ff = 0;
   for (const c of coins) {
     if (!c.free) continue;
     const b = c.body, age = t - c.born;
+    if (c.edge || b.velocity.lengthSquared() > 3.2 || age < 0.25) ff++;
+    if (b.collisionFilterGroup === 2 && age > 0.45) { b.collisionFilterGroup = 1; b.collisionFilterMask = -1; }
     // 斜坡上絕不停留：速度太低就沿坡道推一下
     if (b.position.x < RAMP_DEF.x1 + (c.edge ? 0.32 : 0.05) && b.position.y > 0.95) {
       if (b.velocity.x * RAMP.dir.x + b.velocity.y * RAMP.dir.y < 3.3) { b.velocity.x += RAMP.dir.x * 0.3; b.velocity.y += RAMP.dir.y * 0.3; }
@@ -478,6 +487,7 @@ function updateFreeCoins(t) {
     const quick = !c.roll && age > 0.5 && Math.abs(_up.y) > 0.9 && sp < 0.9 && b.velocity.y > -1.0 && b.position.y < 1.8;
     if (quick || (age > 0.45 && flat && sp < 0.7 && b.position.y < 1.6) || (age > 1.5 && sp < 1.8 && b.position.y < 2 && Math.abs(_up.y) > 0.5) || age > 3) settleCoin(c);
   }
+  fastFree = ff;
 }
 function addBall(x, y, z, vx = 0, vy = 0, vz = 0) {
   const b = new CANNON.Body({ mass: 2.5, material: matCoin, shape: ballShape, linearDamping: 0.15, angularDamping: 0.4 });
@@ -1261,7 +1271,7 @@ if (!DEBUG && !params.has('nohelp')) $('helpPanel').classList.remove('hidden');
 // ====================== 主迴圈 ======================
 let shadowTick = 0;
 function renderViews() {
-  if (renderer.shadowMap.enabled && (shadowTick++ % (MOBILE ? 3 : 1)) === 0) renderer.shadowMap.needsUpdate = true;
+  if (renderer.shadowMap.enabled && (shadowTick++ % (MOBILE ? 3 : 2)) === 0) renderer.shadowMap.needsUpdate = true;
   renderer.setScissorTest(true);
   renderer.setViewport(0, SH - SPLIT, SW, SPLIT); renderer.setScissor(0, SH - SPLIT, SW, SPLIT);
   renderer.render(scene, camera);
@@ -1270,6 +1280,7 @@ function renderViews() {
   renderer.setScissorTest(false);
 }
 const FIXED = 1 / 60;
+const TUNE = {}; // 測試用開關
 let frameNo = 0, physMs = 0, acc = 0, simTime = 0, last = performance.now(), hudTimer = 0;
 const dummy = new THREE.Object3D();
 // 推板防穿透：睡眠中的金幣在 cannon 求解器裡等同靜止物體，推板在折返（速度很低）時不會叫醒它們，
@@ -1284,7 +1295,7 @@ function guardPusher(pf) {
     const b = c.body, p = b.position;
     if (b.sleepState === 0) aw++;
     if (c.spill || p.y > top + 0.2) continue;
-    if (b.sleepState !== 0 && ((p.z > pf - 0.7 && p.z < pf + 0.55) || (v > 0.15 && p.z > pf && p.y < 0.2))) b.wakeUp(); // 推板前進時喚醒前方底層金幣（上層靠接觸連鎖喚醒），讓推力真實傳遞
+    if (b.sleepState !== 0 && ((p.z > pf - 0.7 && p.z < pf + 0.55) || (v > 0.15 && p.z > pf && p.z < pf + (TUNE.band || 9) && p.y < (TUNE.bandY || 9)))) b.wakeUp(); // 推板前進時喚醒前方底層金幣（上層靠接觸連鎖喚醒），讓推力真實傳遞
     if (p.y < top - 0.015 && p.z < pf + 0.02 && p.z > back - 0.3 && Math.abs(p.x) < POOL.xHalf + 0.05) {
       if (pf - p.z < 0.6) { p.z = pf + 0.3; if (b.velocity.z < v) b.velocity.z = Math.max(v, 0); }
       else { p.y = top + 0.07; b.velocity.y = 0; }
@@ -1296,15 +1307,17 @@ function guardPusher(pf) {
 function stepPhysics(dt) {
   acc += Math.min(dt, 0.1); let n = 0;
   while (acc >= FIXED && n < 2) {
+    // 沒有正在飛/滾的金幣時（整池都是平躺金幣），改用一步 1/30 秒取代兩步 1/60 秒，物理成本減半
+    const h = !TUNE.noBig && fastFree === 0 && acc >= FIXED * 2 && n === 0 ? FIXED * 2 : FIXED;
     const pz = pusherFront(simTime) - POOL.pusherHalfD;
     pusherBody.position.set(0, POOL.pusherH / 2, pz);
     pusherBody.velocity.set(0, 0, pusherVel(simTime));
     guardPusher(pz + POOL.pusherHalfD);
-    world.solver.iterations = awakeEst > 600 ? 4 : 5; // 大量金幣同時在動時少做一次迭代
-    const _t0 = performance.now(); world.step(FIXED); physMs = physMs * 0.95 + (performance.now() - _t0) * 0.05;
-    simTime += FIXED; acc -= FIXED; n++;
+    world.solver.iterations = TUNE.it || 6; // 迭代多一點反而讓金幣堆更快穩定入睡，推力也傳得更遠（實測更省） // 求解器迭代：平常 4 次，大量金幣同時在動時 3 次
+    const _t0 = performance.now(); world.step(h); physMs = physMs * 0.95 + (performance.now() - _t0) * 0.05;
+    simTime += h; acc -= h; n += h > FIXED ? 2 : 1;
   }
-  if (n === 2) acc = 0;
+  if (n >= 2) acc = 0;
 }
 function syncPool() {
   const pf = pusherFront(simTime), pv = pusherVel(simTime);
@@ -1409,11 +1422,19 @@ if (DEBUG) {
   $('debugPanel').addEventListener('click', (e) => { const d = e.target.dataset.d; if (d) debugAction(d); });
 }
 window.__game = {
-  S, debugAction, coins, balls, items, wheel, sparkPts, sparks, world,
+  S, debugAction, coins, balls, items, wheel, sparkPts, sparks, world, TUNE, pf: () => pusherFront(simTime),
   addCoins(n) { addPrizeCoins(n, 'debug'); },
   addTk(n) { addTickets(n); },
+  fillFlat(n) { // 測試用：直接鋪 n 枚平躺金幣（分層），用來做固定條件的效能測試
+    const p0 = pusherFront(simTime); let k = 0;
+    for (let layer = 0; k < n && layer < 40; layer++) for (let x = -POOL.xHalf + 0.3; x <= POOL.xHalf - 0.28 && k < n; x += 0.5) for (let z = p0 + 0.3; z <= POOL.front - 0.3 && k < n; z += 0.5) {
+      const o = layer % 2 ? 0.25 : 0; if (Math.abs(x + o) > POOL.xHalf - 0.25) continue;
+      addCoin(x + o, 0.04 + layer * 0.075, z + o * 0.5, 0, 0, 0); k++;
+    }
+    return k;
+  },
   awake: () => coins.reduce((a, c) => a + (c.body.sleepState === 0 ? 1 : 0), 0),
-  ff(sec) { for (let i = 0; i < sec * 60; i++) { stepPhysics(FIXED); updateFreeCoins(simTime); syncPool(); updateDispense(FIXED); } },
+  ff(sec, fps = 30) { const d = 1 / fps; for (let i = 0; i < sec * fps; i++) { stepPhysics(d); updateFreeCoins(simTime); syncPool(); updateDispense(d); updateTickets(d); } },
   shootAt(nx, ny, c = 0.5) { mouse.set(nx, ny); fire(c); },
   itemScreen(i) { const it = items[i]; const v = new THREE.Vector3(); it.model.getWorldPosition(v); return { ...toScreen(v), row: it.rowIdx, value: it.value, state: it.state }; },
   perf: () => ({ frameMs: +frameMs.toFixed(2), renderMs: +renderMs.toFixed(2), physMs: +physMs.toFixed(2), frames, coins: coins.length, free: freeCount, pr: renderer.getPixelRatio() }),
